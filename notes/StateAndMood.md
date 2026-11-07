@@ -8,16 +8,16 @@ There is no transition logic. Each frame, the overlay works out which animation 
 
 ## Pipeline
 
-### 1. The mood arrives (once a second)
+### 1. The mood arrives (as each report does)
 
-`Stage.poll()` (line 480) reads `~/.claude/desk-buddy/sessions/*.json`, which the mod writes. `Buddy.apply()` (line 338) passes the report's mood to `setMood()` (line 351), which stores it, resets `moodSince` and clears any pause (`restUntil`). A buddy with no session calls `rest()` (line 345) and gets the mood `idle`.
+`Stage.receive()` takes each `POST /report` from the mod, keeps it in memory unless its `seq` is older, and calls `refresh()` straight away. `Stage.tick()` calls `refresh()` once a second too, for the changes only time brings. `Buddy.apply()` (line 338) passes the report's mood to `setMood()` (line 351), which stores it, resets `moodSince` and clears any pause (`restUntil`). A buddy with no session calls `rest()` (line 345) and gets the mood `idle`.
 
 ### 2. The mood becomes a displayed state (20 times a second)
 
 `Buddy.step()` (line 394) adjusts the mood before drawing:
 
 - `done` and `error` show for 6 seconds, then display as `idle`. The stored `mood` doesn't change, only the local `shown`.
-- `view.asleep` turns on after 90 seconds in the same mood, if `shown` is `idle` and the buddy isn't held. The timer is `moodSince`, so it includes the 6 seconds of `done` or `error`.
+- `view.asleep` follows `Buddy.followRoutine()`. While `shown` is `idle` and the buddy isn't held, it wanders for `awakeFor` (90–180 seconds), naps for `napFor` (60–180 seconds), stands for `wakingFor` (2 seconds), then wanders again. Any other `shown`, or being carried, wakes it and starts the routine over.
 - `view.held` is true while the mouse is carrying the buddy.
 - `view.moving` is true only on frames where the buddy actually moved. It's false during pauses and while the cursor is over the body.
 

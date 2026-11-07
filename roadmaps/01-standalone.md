@@ -13,7 +13,7 @@ How to tackle [section 1 of the roadmap](../ROADMAP.md#1-standalone-app): desk b
 
 - **The mod doesn't poll.** It already pushes from hooks, plus a 15-second heartbeat. The polling is the app reading `sessions/*.json` every second in `Stage.poll()`, so the mod only changes where it sends reports.
 - **A buddy with no session nearly works.** `cast()` already creates a resting buddy, and `poll()` copes with a missing folder.
-- **Napping is the real gap.** After 90 seconds idle the buddy sleeps and never wakes, because `moodSince` only resets when the mood changes.
+- **Napping was the real gap.** After 90 seconds idle the buddy slept and never woke, because `moodSince` only resets when the mood changes. `Buddy.followRoutine()` now runs its own cycle instead.
 
 ## Transport
 
@@ -41,7 +41,7 @@ void $.http.fetch('http://desk-buddy/report', {
 | Endpoint | Purpose |
 |---|---|
 | `POST /report` | Full session snapshot, including `seq` and a protocol version |
-| `GET /status` | App version, data folder, binary path |
+| `GET /status` | App version, protocol version, session count, data folder, binary path |
 | `POST /quit` | Same as quitting from the menu |
 
 ### What has been tested
@@ -52,44 +52,50 @@ A small Swift `NWListener` prototype, called with curl:
 - Connections fail cleanly when the app is down.
 - It relaunches fine over a stale socket file left by a crash.
 
+A real mod calling the same kind of listener through `$.http.fetch`, on the planned path:
+
+- The POST got a 200 and its body back in 6 ms, and the space in the path caused no trouble.
+- A socket nobody listens on makes `$.http.fetch` throw (`ENOENT`) straight away, so a report to a closed app fails cleanly. `report()` needs to catch it.
+- The mod's requests send `Connection: keep-alive`. The prototype answered with `Connection: close` and that worked, so the app can do the same.
+
 Not tested yet:
 
-- A call from a real mod through `$.http.fetch`.
-- Whether an organization's web-fetch policy blocks socket requests.
+- Whether an organization's web-fetch policy blocks socket requests. Nothing blocked it on this account, but that says nothing about an organization with a policy set.
 - Whether `socketPath` works on Windows.
 
 ## Steps
 
 ### 1. Prove the connection
 
-- [ ] Send one POST from a real mod to a prototype listener. Everything else depends on this.
+- [x] Send one POST from a real mod to a prototype listener. Everything else depends on this.
 
 ### 2. Make the app independent
 
-- [ ] Remove `quitAfterEmpty`.
-- [ ] Add an idle routine that cycles between wandering, napping and waking, so activity comes from the app itself.
+- [x] Remove `quitAfterEmpty`.
+- [x] Add an idle routine that cycles between wandering, napping and waking, so activity comes from the app itself.
 
 ### 3. Replace the files with the socket, in one change
 
-- [ ] Add the endpoints and keep reports in memory.
-- [ ] Run `cast()` as soon as a report arrives, so moods update right away instead of up to a second later.
-- [ ] Remove the `unread` handling for half-written files.
-- [ ] Keep a light 1-second timer for `staleAfter`, `idleGrace` and `avatars.refresh()`.
-- [ ] Update `mod/hooks/register.test.ts`, which currently stubs `fs.write`.
+- [x] Add the endpoints and keep reports in memory.
+- [x] Run `cast()` as soon as a report arrives, so moods update right away instead of up to a second later.
+- [x] Remove the `unread` handling for half-written files.
+- [x] Keep a light 1-second timer for `staleAfter`, `idleGrace` and `avatars.refresh()`.
+- [x] Update `mod/hooks/register.test.ts`, which currently stubs `fs.write`.
 
 ### 4. Handle stop and start
 
-- [ ] Have `/desk-buddy stop` call `POST /quit`, which runs the same `NSApp.terminate` as the menu item. Keep `pkill` only as a fallback.
+- [x] Have `/desk-buddy stop` call `POST /quit`, which runs the same `NSApp.terminate` as the menu item. Keep `pkill` only as a fallback.
 
 ### 5. Move the data
 
-- [ ] Move it to `~/Library/Application Support/DeskBuddy/`, with a one-time migration of `avatars.json`, `sprites/` and `jobs/`.
-- [ ] Have `GET /status` return the data folder and binary path, so the mod stops hardcoding them.
+- [x] Move it to `~/Library/Application Support/DeskBuddy/`, with a one-time migration of `avatars.json`, `sprites/` and `jobs/`. Delete the old `sessions/` folder, which nothing reads now.
+- [x] Have `GET /status` return the data folder and binary path, so the mod stops hardcoding them.
 
 ### 6. Ship the app
 
-- [ ] Replace `launch.sh` with a build script and a signed, notarized release.
-- [ ] Have the mod open the app with `open -g -b <bundle id>`.
+- [x] Replace `launch.sh` with a build script and an unsigned release (`macos/build.sh`).
+- [ ] Sign and notarize the release. This needs an Apple Developer ID. Until then macOS blocks the first open, and it takes Open Anyway in Privacy & Security.
+- [x] Have the mod open the app with `open -g -b <bundle id>`.
 
 ## Things to watch for
 

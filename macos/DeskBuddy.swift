@@ -1,18 +1,24 @@
 // The overlay: one small window per buddy, walking the screen. Clicks pass through
-// all of it but the buddy's body, which can be picked up. It reads ~/.claude/desk-buddy/sessions/*.json, which the mod writes,
-// and draws the sprite sheet bundled with the app, or one from ~/.claude/desk-buddy/avatars.json.
+// all of it but the buddy's body, which can be picked up. Sessions report to it over a Unix socket, and it keeps
+// their reports in memory. It draws the sprite sheet bundled with the app, or one from avatars.json in its data folder.
 // The sheet's rules are in ../mod/AVATAR-SHEETS.md.
 // Merely open sessions get no buddy: one is out per session at work, and one
 // always stays, resting, to take the next session that starts working.
 import AppKit
+import Network
 
 let home = FileManager.default.homeDirectoryForCurrentUser
-let buddyDir = home.appendingPathComponent(".claude/desk-buddy")
-let sessionsDir = buddyDir.appendingPathComponent("sessions")
+let buddyDir = home.appendingPathComponent("Library/Application Support/DeskBuddy")
+let oldBuddyDir = home.appendingPathComponent(".claude/desk-buddy") // where data lived before
 let avatarsFile = buddyDir.appendingPathComponent("avatars.json")
+let socketFile = buddyDir.appendingPathComponent("buddy.sock")
+let protocolVersion = 1
+let maxRequest = 64 * 1024
 let staleAfter: TimeInterval = 45      // no heartbeat: the session has gone
-let quitAfterEmpty: TimeInterval = 120 // nobody left: the app leaves too
 let idleGrace: TimeInterval = 60       // a session keeps its buddy this long after its last turn
+let awakeFor: ClosedRange<TimeInterval> = 90...180 // an idle buddy wanders this long
+let napFor: ClosedRange<TimeInterval> = 60...180   // then naps this long
+let wakingFor: TimeInterval = 2                    // and stands a moment before it walks off
 let restingName = "buddy"
 let winW: CGFloat = 190, winH: CGFloat = 112
 let spriteFit: CGFloat = 64  // a sheet with no "scale" is drawn about this tall
@@ -23,6 +29,7 @@ let animationNames = ["idle", "walk", "thinking", "reading", "editing", "running
 
 struct Report: Decodable {
     let id: String
+    let seq: Int // reports can arrive out of order: a session's highest so far wins
     let project: String
     let mood: String
     let tool: String?
@@ -311,6 +318,8 @@ final class Buddy {
     var restUntil: Date = .distantPast
     var mood = "starting"
     var moodSince = Date()
+    var napping = false
+    var routineTurns: Date?       // when an idle buddy next falls asleep or wakes; nil unless idle
     var lastHeard = Date()
     var redrawTick = 0
     var shownSpriteTick: Int?
@@ -353,6 +362,25 @@ final class Buddy {
         mood = next
         moodSince = Date()
         restUntil = .distantPast
+    }
+
+    // An idle buddy's own routine, session or no session: it wanders, naps, wakes
+    // and wanders again. Anything else, being carried too, starts it over awake.
+    func followRoutine(idle: Bool) {
+        guard idle else {
+            napping = false
+            routineTurns = nil
+            return
+        }
+        let now = Date()
+        guard let turns = routineTurns else {
+            routineTurns = now.addingTimeInterval(Double.random(in: awakeFor))
+            return
+        }
+        guard now >= turns else { return }
+        napping.toggle()
+        routineTurns = now.addingTimeInterval(Double.random(in: napping ? napFor : awakeFor))
+        if !napping { restUntil = now.addingTimeInterval(wakingFor) }
     }
 
     func dress(_ sprite: Sprite?) {
@@ -409,7 +437,8 @@ final class Buddy {
         view.mood = shown
         view.caption = s.caption
         view.clock += dt
-        view.asleep = !isHeld && shown == "idle" && held > 90
+        followRoutine(idle: shown == "idle" && !isHeld)
+        view.asleep = napping
         view.held = isHeld
 
         var moving = false
@@ -451,21 +480,127 @@ final class Buddy {
     func leave() { window.orderOut(nil); window.close() }
 }
 
+struct Reply {
+    var status = 200
+    var body: [String: Any] = ["ok": true]
+    var then: (() -> Void)? = nil // runs once the reply has gone
+}
+
+// Does anything answer on this socket? A file nothing answers on is left by a crash.
+func socketAnswers(_ path: String) -> Bool {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return false }
+    defer { close(fd) }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: path.utf8) }
+    return withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+        }
+    }
+}
+
+// HTTP over a Unix socket, on the main queue. File permissions keep it to this user,
+// so it needs no token. Each connection carries one request.
+final class Server {
+    var route: (String, Data) -> Reply = { _, _ in Reply(status: 503) }
+    var listener: NWListener?
+
+    func start() {
+        let path = socketFile.path
+        // Too long and NWListener says it's ready, but makes no socket. The buddy still runs.
+        guard path.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else {
+            NSLog("DeskBuddy: socket path is too long, so sessions can't reach this app: %@", path)
+            return
+        }
+        if socketAnswers(path) { exit(0) } // another copy is already running
+        do {
+            unlink(path)
+            let parameters = NWParameters.tcp
+            parameters.requiredLocalEndpoint = NWEndpoint.unix(path: path)
+            let listener = try NWListener(using: parameters)
+            listener.stateUpdateHandler = { state in
+                if case .failed(let error) = state { NSLog("DeskBuddy: socket failed: %@", String(describing: error)) }
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                connection.start(queue: .main)
+                self?.read(connection, Data())
+            }
+            listener.start(queue: .main)
+            self.listener = listener
+        } catch {
+            NSLog("DeskBuddy: could not open the socket: %@", String(describing: error))
+        }
+    }
+
+    func stop() {
+        guard listener != nil else { return }
+        listener?.cancel()
+        unlink(socketFile.path)
+    }
+
+    func read(_ connection: NWConnection, _ received: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: maxRequest) { [weak self] data, _, done, error in
+            guard let self else { return }
+            let buffer = received + (data ?? Data())
+            if let reply = self.reply(to: buffer) {
+                self.send(reply, on: connection)
+            } else if done || error != nil {
+                connection.cancel()
+            } else {
+                self.read(connection, buffer)
+            }
+        }
+    }
+
+    // The reply once the whole request is in; nil until then.
+    func reply(to buffer: Data) -> Reply? {
+        if buffer.count > maxRequest { return Reply(status: 413) }
+        guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+        let lines = String(decoding: buffer[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
+        let length = lines.dropFirst().compactMap { line -> Int? in
+            let parts = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, parts[0].lowercased() == "content-length" else { return nil }
+            return Int(parts[1].trimmingCharacters(in: .whitespaces))
+        }.first ?? 0
+        guard buffer.count - end.upperBound >= length else { return nil }
+        let start = lines[0].split(separator: " ")
+        guard start.count == 3 else { return Reply(status: 400) }
+        let path = start[1].split(separator: "?", omittingEmptySubsequences: false)[0]
+        return route("\(start[0]) \(path)", Data(buffer[end.upperBound...].prefix(length)))
+    }
+
+    func send(_ reply: Reply, on connection: NWConnection) {
+        var body = reply.body
+        if reply.status != 200 { body = ["ok": false] }
+        let json = (try? JSONSerialization.data(withJSONObject: body, options: [.withoutEscapingSlashes])) ?? Data("{}".utf8)
+        let head = "HTTP/1.1 \(reply.status) \(reply.status == 200 ? "OK" : "Error")\r\nContent-Type: application/json\r\nContent-Length: \(json.count)\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(head.utf8) + json, completion: .contentProcessed { _ in
+            connection.cancel()
+            reply.then?()
+        })
+    }
+}
+
 final class Stage: NSObject, NSApplicationDelegate {
     var buddies: [Buddy] = [] // oldest first
-    var emptySince = Date()
+    var reports: [String: Report] = [:] // an ended session stays until it is stale, so a late report can't revive it
+    let server = Server()
     var statusItem: NSStatusItem!
     var last = Date()
     let avatars = AvatarLibrary()
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        server.route = { [weak self] route, body in self?.answer(route, body) ?? Reply(status: 503) }
+        server.start()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🐾"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Send buddies home", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
-        poll()
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
+        tick()
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         let frames = Timer(timeInterval: 1.0 / 20, repeats: true) { [weak self] _ in self?.frame() }
         RunLoop.main.add(frames, forMode: .common)
     }
@@ -477,45 +612,62 @@ final class Stage: NSObject, NSApplicationDelegate {
         buddies.forEach { $0.step(dt) }
     }
 
-    func poll() {
-        avatars.refresh()
-        let files = (try? FileManager.default.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: nil)) ?? []
-        var reports: [String: Report] = [:]
-        var unread = Set<String>()
-        for file in files where file.pathExtension == "json" {
-            // A half-written file reads as nothing this second, and as itself the next.
-            guard let data = try? Data(contentsOf: file),
-                  let report = try? JSONDecoder().decode(Report.self, from: data) else {
-                unread.insert(file.deletingPathExtension().lastPathComponent)
-                continue
-            }
-            let age = Date().timeIntervalSince1970 - report.updatedAt / 1000
-            if report.mood == "ended" || age > staleAfter {
-                try? FileManager.default.removeItem(at: file)
-                continue
-            }
-            reports[report.id] = report
+    func applicationWillTerminate(_ note: Notification) { server.stop() }
+
+    func answer(_ route: String, _ body: Data) -> Reply {
+        switch route {
+        case "POST /report":
+            guard let report = try? JSONDecoder().decode(Report.self, from: body) else { return Reply(status: 400) }
+            receive(report)
+            return Reply()
+        case "GET /status":
+            return Reply(body: ["version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "dev",
+                                "protocol": protocolVersion,
+                                "sessions": reports.values.filter { $0.mood != "ended" }.count,
+                                "dataFolder": buddyDir.path,
+                                "binary": Bundle.main.executablePath ?? "",
+                                "resources": Bundle.main.resourcePath ?? ""])
+        case "POST /quit":
+            return Reply(then: { NSApp.terminate(nil) })
+        default:
+            return Reply(status: 404)
         }
-        cast(reports, unread)
+    }
+
+    func receive(_ report: Report) {
+        if let known = reports[report.id], report.seq <= known.seq { return }
+        reports[report.id] = report
+        refresh()
+    }
+
+    // What only time changes: silent sessions going stale, and idle ones losing their buddy.
+    func tick() {
+        avatars.refresh()
+        let now = Date().timeIntervalSince1970
+        reports = reports.filter { now - $0.value.updatedAt / 1000 <= staleAfter }
+        refresh()
+    }
+
+    func refresh() {
+        let live = reports.filter { $0.value.mood != "ended" }
+        cast(live)
         for buddy in buddies {
             if let session = buddy.session {
-                if let report = reports[session] { buddy.apply(report) }
+                if let report = live[session] { buddy.apply(report) }
             } else {
                 buddy.rest()
             }
             buddy.dress(avatars.sprite(buddy.pick))
         }
         statusItem.button?.title = buddies.isEmpty ? "🐾" : "🐾 \(buddies.count)"
-        if !reports.isEmpty || !unread.isEmpty { emptySince = Date() }
-        if Date().timeIntervalSince(emptySince) > quitAfterEmpty { NSApp.terminate(nil) }
     }
 
     // Who works for whom. A session at work without a buddy takes a spare one
     // before a new one is made, so working one session after another keeps the
     // same buddy; only sessions working at once bring out more.
-    func cast(_ reports: [String: Report], _ unread: Set<String>) {
+    func cast(_ reports: [String: Report]) {
         for buddy in buddies {
-            guard let session = buddy.session, !unread.contains(session) else { continue }
+            guard let session = buddy.session else { continue }
             if reports[session]?.holdsBuddy != true { buddy.session = nil }
         }
 
@@ -524,7 +676,7 @@ final class Stage: NSObject, NSApplicationDelegate {
         let taken = Set(buddies.compactMap(\.session))
         for report in reports.values where report.working && !taken.contains(report.id) {
             let spares = buddies.filter { buddy in
-                buddy.session.map { !unread.contains($0) && reports[$0]?.working == false } ?? true
+                buddy.session.map { reports[$0]?.working == false } ?? true
             }
             if let buddy = spares.min(by: { stopped($0) < stopped($1) }) {
                 buddy.session = report.id
@@ -654,6 +806,28 @@ func installAvatar(_ name: String, from folder: URL) {
     print("Installed \(name). Pick it with /desk-buddy avatar \(name).")
 }
 
+// Makes the data folder, private to this user, and brings over what lived in the old
+// one. Anything already here stays. avatars.json goes last, once its sheets are in place.
+func moveOldData() {
+    let manager = FileManager.default
+    do {
+        try manager.createDirectory(at: buddyDir, withIntermediateDirectories: true)
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: buddyDir.path)
+    } catch {
+        NSLog("DeskBuddy: could not make the data folder: %@", String(describing: error))
+        return
+    }
+    for name in ["sprites", "jobs", "avatars.json"] {
+        let old = oldBuddyDir.appendingPathComponent(name), new = buddyDir.appendingPathComponent(name)
+        guard manager.fileExists(atPath: old.path), !manager.fileExists(atPath: new.path) else { continue }
+        do { try manager.moveItem(at: old, to: new) } catch {
+            NSLog("DeskBuddy: could not move %@: %@", name, String(describing: error))
+        }
+    }
+    try? manager.removeItem(at: oldBuddyDir.appendingPathComponent("sessions"))
+}
+
+moveOldData()
 let arguments = CommandLine.arguments
 // `DeskBuddy --sheet out.png [avatar]`: a configured avatar, or the bundled one, in every mood.
 if (3...4).contains(arguments.count), arguments[1] == "--sheet" {

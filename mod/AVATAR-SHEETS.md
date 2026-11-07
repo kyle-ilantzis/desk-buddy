@@ -19,7 +19,7 @@ There are 13 animations, one row each, in this order. A generated avatar must ha
 | 8 | `waiting` | A question or a permission prompt: it needs the person. | Standing, waving an arm to get attention. | 6 @ 10 |
 | 9 | `done` | A turn finished. Plays for 6 seconds. | Delighted, with sparkles around it. | 6 @ 10 |
 | 10 | `error` | A turn ended in failure. Plays for 6 seconds. | Dazed: X eyes or similar. | 1 @ 1 |
-| 11 | `asleep` | Idle for over 90 seconds. | Eyes closed, resting. | 1 @ 1 |
+| 11 | `asleep` | On and off while idle, first after 90 to 180 seconds. | Eyes closed, resting. | 1 @ 1 |
 | 12 | `held` | Carried by the mouse. | Surprised, feet dangling. | 6 @ 5 |
 
 ## What the overlay does, so the art must not
@@ -65,7 +65,7 @@ This shows two of the 13. List them all, each with its `row`, `frames` and `fps`
 
 ## Checking and installing
 
-With `DeskBuddy` being `~/.claude/desk-buddy/DeskBuddy.app/Contents/MacOS/DeskBuddy`, and a folder holding `sheet.png` and `avatar.json`:
+With `DeskBuddy` being `/Applications/DeskBuddy.app/Contents/MacOS/DeskBuddy`, and a folder holding `sheet.png` and `avatar.json`:
 
 - `DeskBuddy --check-avatar <folder> <preview.png>` lists what's wrong, such as a missing state or a blank frame, and draws every state as the overlay would.
-- `DeskBuddy --install-avatar <name> <folder>` runs the same checks, copies the sheet to `~/.claude/desk-buddy/sprites/<name>.png`, and adds it to `avatars.json`.
+- `DeskBuddy --install-avatar <name> <folder>` runs the same checks, copies the sheet to `~/Library/Application Support/DeskBuddy/sprites/<name>.png`, and adds it to `avatars.json`.

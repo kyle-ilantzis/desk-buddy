@@ -15,7 +15,7 @@ The task message gives you the avatar's name, your job folder, the spec, the exa
 
 ## Rules
 
-- Run one command at a time, with no `&&`, `;`, pipes, redirects or `cd`. Use absolute paths in commands and in `generate.swift`.
+- Run one command at a time, with no `&&`, `;`, pipes, redirects or `cd`. Use absolute paths in commands and in `generate.swift`. The job folder's path has a space in it, so put double quotes around every path in a command.
 - Bash can run only `swift`, `swiftc`, `sips` and the two DeskBuddy commands given to you. You can write only inside the job folder. Don't use the network.
 - Don't edit `avatars.json` yourself.
 

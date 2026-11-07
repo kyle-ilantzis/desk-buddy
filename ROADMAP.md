@@ -6,12 +6,12 @@ Desk buddy today is a macOS overlay that exists to serve Claude Code sessions: t
 
 Desk buddy runs without any Claude Code session. Open it and the buddy is on screen. The plan is in [roadmaps/01-standalone.md](roadmaps/01-standalone.md).
 
-- [ ] Opening the app shows a buddy straight away, with no session needed. It wanders and naps on its own.
-- [ ] The app stays open until the person quits it. Remove the quit that fires two minutes after the last session closes (`quitAfterEmpty`).
-- [ ] Ship a prebuilt app that can be installed and opened like any other, so it no longer needs the Xcode command line tools or a first-run `swiftc` build from `launch.sh`.
-- [ ] Sessions join a running app: the mod finds it, or opens it if it is installed, and buddies pick up work as they do now.
-- [ ] Work out what `/desk-buddy stop` means when the person opened the app themselves. Today it kills the process.
-- [ ] Keep the app's data somewhere that makes sense without Claude Code installed. Everything is under `~/.claude/desk-buddy/` today.
+- [x] Opening the app shows a buddy straight away, with no session needed. It wanders and naps on its own.
+- [x] The app stays open until the person quits it. Remove the quit that fires two minutes after the last session closes (`quitAfterEmpty`).
+- [ ] Ship a prebuilt app that can be installed and opened like any other, so it no longer needs the Xcode command line tools or a first-run `swiftc` build. `macos/build.sh` makes the app, but it stays unticked until the release is signed and notarized.
+- [x] Sessions join a running app: the mod finds it, or opens it if it is installed, and buddies pick up work as they do now.
+- [x] Work out what `/desk-buddy stop` means when the person opened the app themselves. Today it kills the process.
+- [x] Keep the app's data somewhere that makes sense without Claude Code installed. It now lives in `~/Library/Application Support/DeskBuddy/`.
 
 ## 2. Choose your buddy
 
@@ -46,7 +46,7 @@ Desk buddy runs on macOS and Windows, which means redesigning the native part so
 
 **Make the mod cross-platform**
 
-- [ ] Replace `launch.sh` and the `/bin/sh`, `/bin/rm`, `/bin/mkdir`, `/bin/cp`, `/bin/mv` and `/usr/bin/pkill` calls in `mod/hooks/register.ts`.
+- [ ] Replace the `open`, `/bin/rm`, `/bin/mkdir`, `/bin/cp`, `/bin/mv` and `/usr/bin/pkill` calls in `mod/hooks/register.ts`.
 - [ ] Stop relying on `HOME` and on `/` as the path separator.
 - [ ] Make `/desk-buddy create` work on Windows. The avatar maker generates sheets with `swift` and `sips`, which are macOS tools, and its permissions name them too.
 

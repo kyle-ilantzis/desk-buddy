@@ -1,11 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
 const HOME = '/Users/test'
-const file = (id: string) => `${HOME}/.claude/desk-buddy/sessions/${id}.json`
+const DATA = `${HOME}/Library/Application Support/DeskBuddy`
+const SOCKET = `${DATA}/buddy.sock`
+const BINARY = '/apps/DeskBuddy.app/Contents/MacOS/DeskBuddy'
 
 const AVATARS = JSON.stringify({ avatars: { fox: { sheet: 'fox.png', frameWidth: 32, frameHeight: 32 }, owl: {} } })
 
-const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/work/my-app' }, disk?: { config?: string, files: string[], moveFails?: boolean }) => {
+const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/work/my-app' }, disk?: { config?: string, files: string[], moveFails?: boolean }, fetch?: () => unknown) => {
   const written: Record<string, any>[] = []
   let staged: string | undefined
   const current = () => (disk === undefined ? config : disk.config)
@@ -27,13 +29,26 @@ const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/
     return { value: { exitCode: 0, stdout: '', stderr: '' } }
   })
   on('fs.write', (_: unknown, e: any) => {
-    if (e.path === `${HOME}/.claude/desk-buddy/avatars.json.tmp`) {
+    if (e.path === `${DATA}/avatars.json.tmp`) {
       staged = e.text
       return { value: undefined }
     }
-    expect(e.path).toBe(file('s1'))
-    written.push(JSON.parse(e.text))
     return { value: undefined }
+  })
+  // Waits run out only where a test stands in for the app.
+  on('clock.sleep', () => (fetch === undefined ? new Promise(() => {}) : { value: undefined }))
+  on('http.fetch', (_: unknown, e: any) => {
+    if (fetch !== undefined) return fetch()
+    expect(e.init.socketPath).toBe(SOCKET)
+    if (e.url === 'http://desk-buddy/status') {
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/apps/DeskBuddy.app/Contents/Resources', future: 1 }) } }
+    }
+    if (e.url === 'http://desk-buddy/quit') ran.push(['POST /quit'])
+    else {
+      expect(e.url).toBe('http://desk-buddy/report')
+      written.push(JSON.parse(e.init.body))
+    }
+    return { value: { status: 200, ok: true, headers: {}, text: '{"ok":true}' } }
   })
   on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {} }))
@@ -54,6 +69,32 @@ test('a session reports its project and what its tools are doing', async ($, on)
   expect(moods).toEqual(['idle', 'running', 'thinking', 'reading', 'thinking'])
   // Only tool names leave the session.
   expect(JSON.stringify(written).includes('secret-token')).toBe(false)
+})
+
+test('reports are numbered in order and carry the protocol version', async ($, on) => {
+  const written = setUp(on)
+  await $.session.start({ cwd: '/work/my-app', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/work/my-app/a.ts' })
+
+  expect(written.every(w => w.v === 1)).toBe(true)
+  const seqs = written.map(w => w.seq)
+  expect(seqs.every((seq, i) => i === 0 || seq > seqs[i - 1])).toBe(true)
+  // A reload starts the module over, so the count starts from the clock, not from zero.
+  expect(seqs[0]).toBeGreaterThanOrEqual(1000)
+})
+
+test('a closed app costs a session nothing', async ($, on) => {
+  setUp(on, undefined, [], undefined, undefined, () => { throw new Error('ENOENT') })
+  await $.session.start({ cwd: '/work/my-app', surface: 'desktop', isInteractive: true })
+  const result = await $.tool.call({ tool: 'Read', file_path: '/work/my-app/a.ts' })
+  expect(result).toEqual({ result: {} })
+})
+
+test('a hung app holds up no tool call', async ($, on) => {
+  setUp(on, undefined, [], undefined, undefined, () => new Promise(() => {}))
+  await $.session.start({ cwd: '/work/my-app', surface: 'desktop', isInteractive: true })
+  const result = await $.tool.call({ tool: 'Read', file_path: '/work/my-app/a.ts' })
+  expect(result).toEqual({ result: {} })
 })
 
 const command = (args: string) => ({ command: 'desk-buddy', args })
@@ -79,7 +120,7 @@ test('a pick becomes the default, moved into place with the rest of the config i
   await $.session.start(start)
   await $.command.run(command('avatar fox'))
 
-  const avatars = `${HOME}/.claude/desk-buddy/avatars.json`
+  const avatars = `${DATA}/avatars.json`
   expect(ran).toContainEqual(['/bin/mv', '-f', `${avatars}.tmp`, avatars])
   expect(JSON.parse(disk.config)).toEqual({ ...JSON.parse(AVATARS), default: 'fox' })
 
@@ -163,7 +204,7 @@ test('start launches the overlay', async ($, on) => {
   const answer = await $.command.run(command('start'))
   expect(answer.text).toContain('Desk buddies are out')
   expect(ran.length).toBe(launchesAtStart + 1)
-  expect(ran.at(-1)?.at(-1)?.endsWith('/macos/launch.sh')).toBe(true)
+  expect(ran.at(-1)).toEqual(['/usr/bin/open', '-g', '-b', 'kyleilantzis.desk-buddy.overlay'])
 })
 
 test('an unknown option shows the help and launches nothing', async ($, on) => {
@@ -182,6 +223,44 @@ test('stop points at start', async ($, on) => {
   await $.session.start(start)
   const answer = await $.command.run(command('stop'))
   expect(answer.text).toContain('/desk-buddy start')
+})
+
+const PKILL = ['/usr/bin/pkill', '-x', 'DeskBuddy']
+
+test('stop quits the app over the socket, as the menu item does', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran)
+  await $.command.run(command('stop'))
+  expect(ran).toEqual([['POST /quit']])
+})
+
+test('stop falls back to pkill when the app is closed', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, () => { throw new Error('ENOENT') })
+  await $.command.run(command('stop'))
+  expect(ran).toEqual([PKILL])
+})
+
+test('stop falls back to pkill when the app is hung', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, () => new Promise(() => {}))
+  await $.command.run(command('stop'))
+  expect(ran).toEqual([PKILL])
+})
+
+test('stop falls back to pkill when the app refuses', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, () => ({ value: { status: 503, ok: false, headers: {}, text: '' } }))
+  await $.command.run(command('stop'))
+  expect(ran).toEqual([PKILL])
+})
+
+test('with the app closed, avatar commands say how to start it and change nothing', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, AVATARS, ran, undefined, undefined, () => { throw new Error('ENOENT') })
+  expect((await $.command.run(command('avatar fox'))).text).toContain('/desk-buddy start')
+  expect((await $.command.run(command('create rex /a.png'))).text).toContain('/desk-buddy start')
+  expect(ran).toEqual([])
 })
 
 test('a session that only opens has never been active', async ($, on) => {
@@ -225,15 +304,15 @@ test('the tag follows a session moved out of a spare folder', async ($, on) => {
   expect(written.at(-1)).toMatchObject({ project: 'my-app' })
 })
 
-const home = `${HOME}/.claude/desk-buddy`
-const binary = `${home}/DeskBuddy.app/Contents/MacOS/DeskBuddy`
+const home = DATA
+const binary = BINARY
 
 // A session with a built overlay, in which only `files` exist.
 const setUpCreate = (on: any, config: string | undefined, files: string[]) => {
   const ran: string[][] = []
   const spawned: any[] = []
   const notified: string[] = []
-  setUp(on, undefined, ran, undefined, { config, files: [binary, ...files] })
+  setUp(on, undefined, ran, undefined, { config, files })
   on('agent.spawn', (_: unknown, e: any) => {
     spawned.push(e)
     return { agentId: 'maker-1', model: 'm' }
@@ -256,7 +335,10 @@ test('create copies the images and starts the maker in the job folder', async ($
   expect(ran).toContainEqual(['/bin/cp', `${HOME}/b.jpg`, `${job}/input/2-b.jpg`])
   expect(spawned).toHaveLength(1)
   expect(spawned[0]).toMatchObject({ subagent_type: 'desk-buddy:avatar-maker', cwd: job })
-  expect(spawned[0].prompt).toContain(`--install-avatar rex ${job}/out`)
+  // The data folder has a space in it, so the maker's commands quote their paths.
+  expect(spawned[0].prompt).toContain(`${BINARY} --install-avatar rex "${job}/out"`)
+  expect(spawned[0].prompt).toContain('Example sheet: /apps/DeskBuddy.app/Contents/Resources/buddy.png')
+  expect(spawned[0].prompt).toContain(`${BINARY} --check-avatar "${job}/out" "${job}/preview.png"`)
 })
 
 test('a dragged-in path keeps its escaped spaces', async ($, on) => {
