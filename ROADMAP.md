@@ -4,7 +4,7 @@ Desk buddy today is a macOS overlay that exists to serve Claude Code sessions: t
 
 ## 1. Standalone app
 
-Desk buddy runs without any Claude Code session. Open it and the buddy is on screen.
+Desk buddy runs without any Claude Code session. Open it and the buddy is on screen. The plan is in [roadmaps/01-standalone.md](roadmaps/01-standalone.md).
 
 - [ ] Opening the app shows a buddy straight away, with no session needed. It wanders and naps on its own.
 - [ ] The app stays open until the person quits it. Remove the quit that fires two minutes after the last session closes (`quitAfterEmpty`).
