@@ -66,8 +66,8 @@
       "row" : 1
     }
   },
-  "frameHeight" : 24,
-  "frameWidth" : 40,
-  "scale" : 4,
-  "sheet" : "buddy.png"
+  "frameHeight" : 48,
+  "frameWidth" : 64,
+  "scale" : 2,
+  "sheet" : "melody.png"
 }

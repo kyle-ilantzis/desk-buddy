@@ -41,7 +41,7 @@ const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/
     if (fetch !== undefined) return fetch()
     expect(e.init.socketPath).toBe(SOCKET)
     if (e.url === 'http://desk-buddy/status') {
-      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/apps/DeskBuddy.app/Contents/Resources', future: 1 }) } }
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/apps/DeskBuddy.app/Contents/Resources', bundled: ['kyle', 'melody'], future: 1 }) } }
     }
     if (e.url === 'http://desk-buddy/quit') ran.push(['POST /quit'])
     else {
@@ -124,8 +124,25 @@ test('a pick becomes the default, moved into place with the rest of the config i
   expect(ran).toContainEqual(['/bin/mv', '-f', `${avatars}.tmp`, avatars])
   expect(JSON.parse(disk.config)).toEqual({ ...JSON.parse(AVATARS), default: 'fox' })
 
-  await $.command.run(command('avatar builtin'))
-  expect(JSON.parse(disk.config).default).toBe('builtin')
+  await $.command.run(command('avatar melody'))
+  expect(JSON.parse(disk.config).default).toBe('melody')
+})
+
+test('a saved pick of builtin lists as kyle', async ($, on) => {
+  setUp(on, AVATARS)
+  on('state.get', () => ({ value: { value: 'builtin', version: 1 } }))
+  await $.session.start(start)
+  expect((await $.command.run(command('avatar'))).text).toContain('This session: kyle.')
+})
+
+test('builtin is retired: picking it wears kyle', async ($, on) => {
+  const disk = { config: AVATARS, files: [] }
+  const written = setUp(on, undefined, [], undefined, disk)
+  await $.session.start(start)
+  const answer = await $.command.run(command('avatar builtin'))
+  expect(answer.text).toContain('now kyle')
+  expect(written.at(-1)).toMatchObject({ avatar: 'kyle' })
+  expect(JSON.parse(disk.config).default).toBe('kyle')
 })
 
 test('picking the default again leaves the config alone', async ($, on) => {
@@ -137,14 +154,15 @@ test('picking the default again leaves the config alone', async ($, on) => {
   expect(ran.some(argv => argv[0] === '/bin/mv')).toBe(false)
 })
 
-test('without a config, going built in writes none', async ($, on) => {
+test('without a config, a pick of a bundled avatar makes one the app can read', async ($, on) => {
   const ran: string[][] = []
-  const disk = { config: undefined, files: [] }
-  setUp(on, undefined, ran, undefined, disk)
+  const disk = { config: undefined as string | undefined, files: [] }
+  const written = setUp(on, undefined, ran, undefined, disk)
   await $.session.start(start)
-  const answer = await $.command.run(command('avatar builtin'))
-  expect(answer.text).toContain('builtin')
-  expect(ran.some(argv => argv[0] === '/bin/mv')).toBe(false)
+  const answer = await $.command.run(command('avatar melody'))
+  expect(answer.text).toContain('new sessions will start with it')
+  expect(written.at(-1)).toMatchObject({ avatar: 'melody' })
+  expect(JSON.parse(disk.config!)).toEqual({ avatars: {}, default: 'melody' })
 })
 
 test('a default that cannot be saved still leaves the session its pick, and says so', async ($, on) => {
@@ -164,17 +182,37 @@ test('a name the config lacks changes nothing and lists the choices', async ($, 
   const written = setUp(on, undefined, ran, undefined, disk)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar cat'))
-  expect(answer.text).toContain('fox, owl, builtin')
+  expect(answer.text).toContain('fox, owl, kyle, melody')
   expect(written.at(-1)?.avatar).toBeUndefined()
   expect(disk.config).toBe(AVATARS)
 })
 
-test('without a config the buddy stays built in', async ($, on) => {
+test('without a config the bundled avatars are still listed', async ($, on) => {
   const written = setUp(on)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar'))
-  expect(answer.text).toContain('No avatars configured')
+  expect(answer.text).toContain('This session: the default. Available: kyle, melody.')
   expect(written.at(-1)?.avatar).toBeUndefined()
+})
+
+test('an installed avatar named like a bundled one is listed once', async ($, on) => {
+  setUp(on, JSON.stringify({ avatars: { melody: {} } }))
+  await $.session.start(start)
+  expect((await $.command.run(command('avatar'))).text).toContain('Available: melody, kyle.')
+})
+
+test('the list shows a display name beside its id, and a pick takes the id', async ($, on) => {
+  setUp(on, JSON.stringify({ avatars: { 'mr-rex': { name: 'Mr Rex' }, owl: { name: 'owl' } } }))
+  await $.session.start(start)
+  expect((await $.command.run(command('avatar'))).text).toContain('Available: Mr Rex (mr-rex), owl, kyle, melody.')
+  expect((await $.command.run(command('avatar mr-rex'))).text).toContain('now mr-rex')
+})
+
+test('an app from before the list still offers kyle', async ($, on) => {
+  const status = { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/r' }) }
+  setUp(on, undefined, [], undefined, undefined, () => ({ value: status }))
+  await $.session.start(start)
+  expect((await $.command.run(command('avatar'))).text).toContain('Available: kyle.')
 })
 
 test('a broken config is reported, not thrown', async ($, on) => {
@@ -336,9 +374,28 @@ test('create copies the images and starts the maker in the job folder', async ($
   expect(spawned).toHaveLength(1)
   expect(spawned[0]).toMatchObject({ subagent_type: 'desk-buddy:avatar-maker', cwd: job })
   // The data folder has a space in it, so the maker's commands quote their paths.
-  expect(spawned[0].prompt).toContain(`${BINARY} --install-avatar rex "${job}/out"`)
-  expect(spawned[0].prompt).toContain('Example sheet: /apps/DeskBuddy.app/Contents/Resources/buddy.png')
+  expect(spawned[0].prompt).toContain(`${BINARY} --install-avatar rex "${job}/out" "rex"`)
+  expect(spawned[0].prompt).toContain('Example sheet: /apps/DeskBuddy.app/Contents/Resources/kyle.png')
   expect(spawned[0].prompt).toContain(`${BINARY} --check-avatar "${job}/out" "${job}/preview.png"`)
+})
+
+test('a display name gets an id for its files, and travels to the install', async ($, on) => {
+  const { ran, spawned } = setUpCreate(on, undefined, ['/a.png'])
+  await $.session.start(start)
+  const answer = await $.command.run(command(`create "Mr Rex" /a.png`))
+
+  expect(answer.text).toContain('Making "Mr Rex"')
+  const job = `${home}/jobs/mr-rex`
+  expect(ran).toContainEqual(['/bin/cp', '/a.png', `${job}/input/1-a.png`])
+  expect(spawned[0].prompt).toContain('Avatar name: Mr Rex')
+  expect(spawned[0].prompt).toContain(`${BINARY} --install-avatar mr-rex "${job}/out" "Mr Rex"`)
+})
+
+test('a display name turns into a plain id', async ($, on) => {
+  const { spawned } = setUpCreate(on, undefined, ['/a.png'])
+  await $.session.start(start)
+  await $.command.run(command(`create "Zoë's  Cat" /a.png`))
+  expect(spawned[0].prompt).toContain(`--install-avatar zoe-s-cat "${home}/jobs/zoe-s-cat/out" "Zoë's  Cat"`)
 })
 
 test('a dragged-in path keeps its escaped spaces', async ($, on) => {
@@ -353,9 +410,14 @@ test('create refuses what it cannot make, and starts nothing', async ($, on) => 
   await $.session.start(start)
   expect((await $.command.run(command('create'))).text).toContain('Usage')
   expect((await $.command.run(command('create rex'))).text).toContain('Usage')
-  expect((await $.command.run(command('create Rex /a.png'))).text).toContain("can't be")
+  expect((await $.command.run(command('create "Mr;Rex" /a.png'))).text).toContain("can't be")
+  expect((await $.command.run(command('create \\"Rex\\" /a.png'))).text).toContain("can't be")
+  expect((await $.command.run(command(`create ${'x'.repeat(33)} /a.png`))).text).toContain("can't be")
   expect((await $.command.run(command('create builtin /a.png'))).text).toContain("can't be")
+  expect((await $.command.run(command('create kyle /a.png'))).text).toContain("can't be")
+  expect((await $.command.run(command('create Melody /a.png'))).text).toContain("can't be")
   expect((await $.command.run(command('create fox /a.png'))).text).toContain('already an avatar')
+  expect((await $.command.run(command('create Fox /a.png'))).text).toContain('already an avatar')
   expect((await $.command.run(command('create rex /gone.png'))).text).toContain('No image at /gone.png')
   expect(spawned).toHaveLength(0)
 })

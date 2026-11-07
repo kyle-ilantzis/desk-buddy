@@ -18,7 +18,7 @@ for arch in arm64 x86_64; do
 done
 lipo -create "$out/DeskBuddy-arm64" "$out/DeskBuddy-x86_64" -output "$app/Contents/MacOS/DeskBuddy"
 rm "$out/DeskBuddy-arm64" "$out/DeskBuddy-x86_64"
-cp "$here/assets/buddy.png" "$here/assets/buddy.json" "$app/Contents/Resources/"
+cp "$here"/assets/*.png "$here"/assets/*.json "$app/Contents/Resources/"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 codesign --force --sign - "$app"
 ditto -c -k --keepParent "$app" "$out/DeskBuddy-$version.zip"

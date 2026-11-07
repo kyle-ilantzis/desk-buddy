@@ -18,17 +18,18 @@ const END_WAIT_MS = 500 // a session's last report gets this long before the ses
 const QUIT_WAIT_MS = 2_000 // a hung app gets this long to answer a quit
 const STATUS_WAIT_MS = 1_000
 const APP_CLOSED = 'The app is not running. Run `/desk-buddy start`, then try again.'
-const BUILT_IN = 'builtin' // no config names this, so the overlay wears the sheet it was built with
+const FALLBACK = 'kyle' // the avatar worn when nothing else is picked
+const RETIRED = 'builtin' // kyle's old name: a saved pick can still say it, and the app dresses it as kyle
+const MAX_NAME = 32
 const MAKER = 'avatar-maker'
 const MAKER_TYPE = `desk-buddy:${MAKER}`
-const CREATE_USAGE = 'Usage: `/desk-buddy create <name> <image> [image...]`. Quote a path with spaces in it.'
+const CREATE_USAGE = 'Usage: `/desk-buddy create <name> <image> [image...]`. Quote a name or a path with spaces in it.'
 const HELP = [
   'Desk buddy commands:',
   '- `/desk-buddy start`: bring the desk buddies out',
   '- `/desk-buddy stop`: send them home',
-  '- `/desk-buddy avatar`: list the configured avatars',
+  '- `/desk-buddy avatar`: list the avatars',
   '- `/desk-buddy avatar <name>`: pick this session\'s avatar, and the default for new sessions',
-  `- \`/desk-buddy avatar ${BUILT_IN}\`: go back to the built-in avatar`,
   '- `/desk-buddy create <name> <image> [image...]`: make a new avatar from pictures, in the background',
 ].join('\n')
 
@@ -50,7 +51,7 @@ let tool: string | undefined
 let toolsInFlight = 0
 let idleSince: number | undefined // when the last turn ended: unset during one, and before the first
 let stopHeartbeat: (() => void) | undefined
-type Place = { dataFolder: string, binary: string, resources: string }
+type Place = { dataFolder: string, binary: string, resources: string, bundled?: string[] }
 
 let place: Place | undefined // the app's last answer, for when it has since closed
 let seq = 0
@@ -106,13 +107,22 @@ function launchOverlay($: Engine) {
   return $.process.run(['/usr/bin/open', '-g', '-b', BUNDLE_ID], { timeoutMs: 10_000 })
 }
 
-// The avatar names in the app's avatars.json; none when there is no file.
-async function configuredAvatars($: Engine, dataFolder: string): Promise<string[]> {
+// The avatars in the app's avatars.json, each id to its display name if it has one;
+// none when there is no file.
+async function configuredAvatars($: Engine, dataFolder: string): Promise<Map<string, string | undefined>> {
   const path = `${dataFolder}/avatars.json`
-  if (!(await $.fs.exists(path))) return []
-  const config = JSON.parse(String(await $.fs.read(path))) as { avatars?: Record<string, unknown> }
-  return Object.keys(config.avatars ?? {}).sort()
+  if (!(await $.fs.exists(path))) return new Map()
+  const config = JSON.parse(String(await $.fs.read(path))) as { avatars?: Record<string, { name?: string }> }
+  const avatars = config.avatars ?? {}
+  return new Map(Object.keys(avatars).sort().map(id => [id, avatars[id]!.name]))
 }
+
+// Only the app knows which sheets it carries. One from before the list carries kyle's, as `builtin`.
+const bundledAvatars = (found: Place) => found.bundled ?? [FALLBACK]
+
+// "Mr Rex" is `mr-rex`: the id that picks and file names use.
+const idOf = (name: string) => name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
 // The command's words: quotes group them, and a backslash keeps the next
 // character, which is how a dragged-in path spells its spaces.
@@ -161,20 +171,23 @@ function makerDecision(tool: string, input: Record<string, unknown>, { dataFolde
 
 async function createAvatar($: Engine, [name = '', ...images]: string[]): Promise<string> {
   if (name === '' || images.length === 0) return CREATE_USAGE
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(name) || name === BUILT_IN) {
-    return `"${name}" can't be an avatar's name: use lowercase letters, digits and dashes, and not "${BUILT_IN}".`
+  const id = idOf(name)
+  // These characters are all safe inside the double quotes of the maker's install command.
+  if (id === '' || name.length > MAX_NAME || !/^[\p{L}\p{N}][\p{L}\p{N} .'_-]*$/u.test(name)) {
+    return `"${name}" can't be an avatar's name: use letters, digits, spaces and dashes, at most ${MAX_NAME} of them.`
   }
   const found = await locate($)
   if (found === undefined) return APP_CLOSED
   const { dataFolder, binary, resources } = found
-  let names: string[]
+  if ([...bundledAvatars(found), RETIRED].includes(id)) return `"${id}" can't be an avatar's name: the app keeps it for its own.`
+  let names: Map<string, string | undefined>
   try {
     names = await configuredAvatars($, dataFolder)
   } catch (error) {
     return `avatars.json could not be read: ${String(error).slice(0, 200)}`
   }
-  if (names.includes(name)) return `There is already an avatar named "${name}".`
-  if ([...makers.values()].includes(name)) return `"${name}" is already being made.`
+  if (names.has(id)) return `There is already an avatar named "${id}".`
+  if ([...makers.values()].includes(id)) return `"${id}" is already being made.`
 
   const userHome = await $.env.get('HOME')
   const paths = images.map(path => (path.startsWith('~/') ? `${userHome}${path.slice(1)}` : path))
@@ -183,7 +196,7 @@ async function createAvatar($: Engine, [name = '', ...images]: string[]): Promis
   }
 
   // Copies, so a picture moved later can't stop the job and the agent keeps to one folder.
-  const job = `${dataFolder}/jobs/${name}`
+  const job = `${dataFolder}/jobs/${id}`
   await $.process.run(['/bin/rm', '-rf', job])
   await $.process.run(['/bin/mkdir', '-p', `${job}/input`, `${job}/out`])
   const copies: string[] = []
@@ -196,43 +209,43 @@ async function createAvatar($: Engine, [name = '', ...images]: string[]): Promis
 
   const spawned = await $.agent.spawn({
     subagentType: MAKER_TYPE,
-    description: `Make the ${name} avatar`,
+    description: `Make the ${id} avatar`,
     cwd: job,
     prompt: [
       `Avatar name: ${name}`,
       `Job folder: ${job}`,
       `Images:\n${copies.map(copy => `- ${copy}`).join('\n')}`,
       `Spec: ${$.plugin.root}/AVATAR-SHEETS.md`,
-      `Example sheet: ${resources}/buddy.png, with buddy.json beside it`,
+      `Example sheet: ${resources}/${FALLBACK}.png, with ${FALLBACK}.json beside it`,
       `Check: ${binary} --check-avatar "${job}/out" "${job}/preview.png"`,
-      `Install: ${binary} --install-avatar ${name} "${job}/out"`,
+      `Install: ${binary} --install-avatar ${id} "${job}/out" "${name}"`,
     ].join('\n'),
   })
   if (spawned.deny !== undefined) return `Could not start the avatar maker: ${spawned.deny.slice(0, 200)}`
-  if (spawned.agentId !== undefined) makers.set(spawned.agentId, name)
+  if (spawned.agentId !== undefined) makers.set(spawned.agentId, id)
   return `Making "${name}" in the background from ${copies.length === 1 ? 'one image' : `${copies.length} images`}. You'll get a notification when it's done, and closing this session stops it.`
 }
 
 // A maker ended: installed means it is in the config, whatever the agent said.
 async function makerEnded($: Engine, agentId: string) {
-  const name = makers.get(agentId)
-  if (name === undefined) return
+  const id = makers.get(agentId)
+  if (id === undefined) return
   makers.delete(agentId)
   const found = await locate($)
-  const installed = found !== undefined && await configuredAvatars($, found.dataFolder).then(names => names.includes(name), () => false)
+  const names = found === undefined ? new Map<string, string | undefined>() : await configuredAvatars($, found.dataFolder).catch(() => new Map<string, string | undefined>())
+  const shown = names.get(id) ?? id
   await $.ui.notify(
-    installed ? `Run /desk-buddy avatar ${name} to wear it.` : `It didn't finish. Its work is in ${found?.dataFolder ?? 'the app\'s data folder'}/jobs/${name}/.`,
-    { title: installed ? `Your avatar ${name} is ready` : `Avatar ${name} failed` },
+    names.has(id) ? `Run /desk-buddy avatar ${id} to wear it.` : `It didn't finish. Its work is in ${found?.dataFolder ?? 'the app\'s data folder'}/jobs/${id}/.`,
+    { title: names.has(id) ? `Your avatar ${shown} is ready` : `Avatar ${shown} failed` },
   )
 }
 
 // The latest pick becomes the config's default, which outlasts the overlay and
 // every session. The overlay reads this file at any moment, so it is moved into
-// place whole. With no file every buddy is built in already.
+// place whole. With no file yet, this makes one: `avatars` is the one key the app needs.
 async function rememberDefault($: Engine, dataFolder: string, name: string) {
   const path = `${dataFolder}/avatars.json`
-  if (!(await $.fs.exists(path))) return
-  const config = JSON.parse(String(await $.fs.read(path))) as { default?: string }
+  const config = (await $.fs.exists(path) ? JSON.parse(String(await $.fs.read(path))) : { avatars: {} }) as { default?: string }
   if (config.default === name) return
   config.default = name
   await $.fs.write(`${path}.tmp`, JSON.stringify(config, null, 2))
@@ -243,28 +256,29 @@ async function rememberDefault($: Engine, dataFolder: string, name: string) {
 async function pickAvatar($: Engine, wanted: string): Promise<string> {
   const found = await locate($)
   if (found === undefined) return APP_CLOSED
-  let names: string[]
+  let names: Map<string, string | undefined>
   try {
     names = await configuredAvatars($, found.dataFolder)
   } catch (error) {
     return `avatars.json could not be read: ${String(error).slice(0, 200)}`
   }
-  const choices = [...names, BUILT_IN].join(', ')
+  const bundled = bundledAvatars(found)
+  const ids = [...names.keys(), ...bundled.filter(id => !names.has(id))]
+  const choices = ids.map(id => (names.get(id) ?? id) === id ? id : `${names.get(id)} (${id})`).join(', ')
   if (wanted === '') {
     const { value: current } = await $.state.get(avatarPick)
-    return names.length === 0
-      ? 'No avatars configured, so this buddy uses the built-in one. Make one with `/desk-buddy create <name> <image>`.'
-      : `This session: ${current ?? 'the default'}. Available: ${choices}.`
+    return `This session: ${current === RETIRED ? FALLBACK : current ?? 'the default'}. Available: ${choices}.`
   }
-  if (wanted !== BUILT_IN && !names.includes(wanted)) return `No avatar named "${wanted}". Available: ${choices}.`
-  await $.state.set(avatarPick, wanted)
+  const id = wanted === RETIRED ? FALLBACK : wanted
+  if (!ids.includes(id)) return `No avatar named "${wanted}". Available: ${choices}.`
+  await $.state.set(avatarPick, id)
   await report($, mood, tool)
   try {
-    await rememberDefault($, found.dataFolder, wanted)
+    await rememberDefault($, found.dataFolder, id)
   } catch (error) {
-    return `This session's buddy is now ${wanted}, but it could not be saved as the default: ${String(error).slice(0, 200)}`
+    return `This session's buddy is now ${id}, but it could not be saved as the default: ${String(error).slice(0, 200)}`
   }
-  return `This session's buddy is now ${wanted}, and new sessions will start with it.`
+  return `This session's buddy is now ${id}, and new sessions will start with it.`
 }
 
 export const register: Register = on => {

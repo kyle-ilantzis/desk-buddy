@@ -1,10 +1,10 @@
 # Avatar sprite sheets
 
-What a desk buddy sheet must hold. `../macos/assets/buddy.png` and `buddy.json` are the built-in avatar: a complete example of every state, at a smaller frame size than generated avatars use.
+What a desk buddy sheet must hold. `../macos/assets/kyle.png` and `kyle.json` are the `kyle` avatar: a complete example of every state, at a smaller frame size than generated avatars use.
 
 ## The states
 
-There are 13 animations, one row each, in this order. A generated avatar must have all of them. The frames and fps are the built-in avatar's, as a guide.
+There are 13 animations, one row each, in this order. A generated avatar must have all of them. The frames and fps are `kyle`'s, as a guide.
 
 | Row | Name | Plays when | What it should show | Frames @ fps |
 | --- | --- | --- | --- | --- |
@@ -43,7 +43,7 @@ There are 13 animations, one row each, in this order. A generated avatar must ha
 - It is scaled without smoothing, so use hard pixels: no antialiasing, soft shadows or gradients.
 - The overlay measures the character from the first `idle` frame, for its shadow, name tag and grab area. Keep props out of that frame.
 
-Generated avatars should use 64x48 frames at `scale` 2 with the character about 26 pixels tall, which is the built-in avatar's size on screen (52 points). Nothing is drawn larger than 256 points.
+Generated avatars should use 64x48 frames at `scale` 2 with the character about 26 pixels tall, which is `kyle`'s size on screen (52 points). Nothing is drawn larger than 256 points.
 
 ## avatar.json
 
@@ -68,4 +68,4 @@ This shows two of the 13. List them all, each with its `row`, `frames` and `fps`
 With `DeskBuddy` being `/Applications/DeskBuddy.app/Contents/MacOS/DeskBuddy`, and a folder holding `sheet.png` and `avatar.json`:
 
 - `DeskBuddy --check-avatar <folder> <preview.png>` lists what's wrong, such as a missing state or a blank frame, and draws every state as the overlay would.
-- `DeskBuddy --install-avatar <name> <folder>` runs the same checks, copies the sheet to `~/Library/Application Support/DeskBuddy/sprites/<name>.png`, and adds it to `avatars.json`.
+- `DeskBuddy --install-avatar <id> <folder> [display name]` runs the same checks, copies the sheet to `~/Library/Application Support/DeskBuddy/sprites/<id>.png`, and adds it to `avatars.json`. The app's own names, `kyle`, `melody` and `builtin`, are refused.

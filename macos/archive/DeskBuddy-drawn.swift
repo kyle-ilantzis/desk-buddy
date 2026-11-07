@@ -1,5 +1,5 @@
 // ARCHIVE: the overlay as it was when the avatar was drawn in code, plus the
-// `--export-buddy <dir>` mode that made assets/buddy.png and assets/buddy.json.
+// `--export-buddy <dir>` mode that made assets/kyle.png and assets/kyle.json, then named buddy.
 // Not part of the build. To change the art at its source, edit this, then:
 //   swiftc -O -framework AppKit -o /tmp/drawn archive/DeskBuddy-drawn.swift && /tmp/drawn --export-buddy assets
 //

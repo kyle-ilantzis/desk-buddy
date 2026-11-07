@@ -1,6 +1,6 @@
 // The overlay: one small window per buddy, walking the screen. Clicks pass through
 // all of it but the buddy's body, which can be picked up. Sessions report to it over a Unix socket, and it keeps
-// their reports in memory. It draws the sprite sheet bundled with the app, or one from avatars.json in its data folder.
+// their reports in memory. It draws the sprite sheets bundled with the app, or one from avatars.json in its data folder.
 // The sheet's rules are in ../mod/AVATAR-SHEETS.md.
 // Merely open sessions get no buddy: one is out per session at work, and one
 // always stays, resting, to take the next session that starts working.
@@ -19,7 +19,9 @@ let idleGrace: TimeInterval = 60       // a session keeps its buddy this long af
 let awakeFor: ClosedRange<TimeInterval> = 90...180 // an idle buddy wanders this long
 let napFor: ClosedRange<TimeInterval> = 60...180   // then naps this long
 let wakingFor: TimeInterval = 2                    // and stands a moment before it walks off
-let restingName = "buddy"
+let defaultAvatar = "kyle"                     // worn when nothing else is picked
+let bundledAvatars = [defaultAvatar, "melody"] // each is <name>.png and <name>.json in the app's Resources
+let retiredAvatar = "builtin"                  // kyle's old name, which a saved pick can still say
 let winW: CGFloat = 190, winH: CGFloat = 112
 let spriteFit: CGFloat = 64  // a sheet with no "scale" is drawn about this tall
 let spriteMax: CGFloat = 256 // and no sheet is drawn larger than this
@@ -68,6 +70,7 @@ struct AnimationConfig: Decodable {
 }
 
 struct AvatarConfig: Decodable {
+    let name: String? // shown on a resting buddy's tag; the avatar's id if left out
     let sheet: String
     let frameWidth: Int
     let frameHeight: Int
@@ -107,6 +110,7 @@ func visibleBounds(_ image: CGImage) -> (minX: Int, maxX: Int, minY: Int, maxY: 
 final class Sprite {
     struct Animation { let row: Int; let start: Int; let frames: Int; let fps: Double }
 
+    let label: String // for the name tag
     let image: CGImage
     let frameW: Int, frameH: Int
     let size: NSSize
@@ -127,6 +131,7 @@ final class Sprite {
             NSLog("desk-buddy: avatar %@: a %dx%d frame does not fit its sheet", name, config.frameWidth, config.frameHeight)
             return nil
         }
+        label = config.name ?? name
         self.image = image
         frameW = config.frameWidth
         frameH = config.frameHeight
@@ -178,21 +183,26 @@ final class Sprite {
     }
 }
 
-// The sheet inside the app, for every buddy with no sheet of its own.
-func bundledSprite() -> Sprite? {
-    guard let resources = Bundle.main.resourceURL,
-          let data = try? Data(contentsOf: resources.appendingPathComponent("buddy.json")),
-          let config = try? JSONDecoder().decode(AvatarConfig.self, from: data) else {
-        NSLog("desk-buddy: the app has no buddy.json")
-        return nil
+// The sheets inside the app, by name.
+func bundledSprites() -> [String: Sprite] {
+    guard let resources = Bundle.main.resourceURL else { return [:] }
+    var found: [String: Sprite] = [:]
+    for name in bundledAvatars {
+        guard let data = try? Data(contentsOf: resources.appendingPathComponent("\(name).json")),
+              let config = try? JSONDecoder().decode(AvatarConfig.self, from: data) else {
+            NSLog("desk-buddy: the app has no %@.json", name)
+            continue
+        }
+        found[name] = Sprite(name, config, base: resources)
     }
-    return Sprite("builtin", config, base: resources)
+    found[retiredAvatar] = found[defaultAvatar]
+    return found
 }
 
-// avatars.json, read again when it changes. Without it, and for a pick that names
-// nothing in it, a buddy wears the bundled sheet.
+// avatars.json, read again when it changes. A name is looked up there, then among
+// the bundled sheets, so an entry named like a bundled avatar wins. Anything else wears kyle.
 final class AvatarLibrary {
-    private let bundled = bundledSprite()
+    private let bundled = bundledSprites()
     private var stamp: Date?
     private var sprites: [String: Sprite] = [:]
     private var fallback: String?
@@ -213,8 +223,10 @@ final class AvatarLibrary {
         }
     }
 
-    func sprite(_ pick: String?) -> Sprite? { (pick ?? fallback).flatMap { sprites[$0] } ?? bundled }
-    func has(_ name: String) -> Bool { sprites[name] != nil }
+    func sprite(_ pick: String?) -> Sprite? {
+        (pick ?? fallback).flatMap { sprites[$0] ?? bundled[$0] } ?? bundled[defaultAvatar]
+    }
+    func has(_ name: String) -> Bool { sprites[name] != nil || bundled[name] != nil }
 }
 
 final class BuddyView: NSView {
@@ -246,7 +258,7 @@ final class BuddyView: NSView {
         return NSRect(x: bounds.midX - size.width / 2, y: groundY, width: size.width, height: size.height + hop)
     }
 
-    // The sheet's frame counter; nil for the built-in avatar.
+    // The sheet's frame counter; nil with no sheet.
     var spriteTick: Int? {
         sprite.map { Int(Double(clock) * $0.animation(mood: mood, moving: moving, asleep: asleep, held: held).fps) }
     }
@@ -338,7 +350,6 @@ final class Buddy {
         window.ignoresMouseEvents = true // step() turns this off only over the body
         window.level = .statusBar
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        view.name = restingName
         view.buddy = self
         window.contentView = view
         window.orderFrontRegardless()
@@ -352,7 +363,6 @@ final class Buddy {
     }
 
     func rest() {
-        view.name = restingName
         pick = nil
         setMood("idle")
     }
@@ -383,7 +393,9 @@ final class Buddy {
         if !napping { restUntil = now.addingTimeInterval(wakingFor) }
     }
 
+    // A resting buddy goes by its avatar's name; one at work keeps its project's.
     func dress(_ sprite: Sprite?) {
+        if session == nil { view.name = sprite?.label ?? defaultAvatar }
         guard sprite !== view.sprite else { return }
         view.sprite = sprite
         window.setFrame(NSRect(origin: position, size: sprite?.windowSize ?? NSSize(width: winW, height: winH)), display: true)
@@ -626,7 +638,8 @@ final class Stage: NSObject, NSApplicationDelegate {
                                 "sessions": reports.values.filter { $0.mood != "ended" }.count,
                                 "dataFolder": buddyDir.path,
                                 "binary": Bundle.main.executablePath ?? "",
-                                "resources": Bundle.main.resourcePath ?? ""])
+                                "resources": Bundle.main.resourcePath ?? "",
+                                "bundled": bundledAvatars])
         case "POST /quit":
             return Reply(then: { NSApp.terminate(nil) })
         default:
@@ -770,8 +783,9 @@ func fail(_ lines: [String]) -> Never {
 
 // Copies a checked avatar in and adds it to avatars.json, which goes last: the
 // overlay notices the JSON changing, and by then the sheet is in place.
-func installAvatar(_ name: String, from folder: URL) {
-    guard name.range(of: "^[a-z0-9][a-z0-9-]*$", options: .regularExpression) != nil, name != "builtin" else {
+func installAvatar(_ name: String, from folder: URL, displayName: String?) {
+    guard name.range(of: "^[a-z0-9][a-z0-9-]*$", options: .regularExpression) != nil,
+          !bundledAvatars.contains(name), name != retiredAvatar else {
         fail(["\"\(name)\" cannot be an avatar's name"])
     }
     let (candidate, _, problems) = checkAvatar(folder)
@@ -796,6 +810,7 @@ func installAvatar(_ name: String, from folder: URL) {
         try manager.copyItem(at: folder.appendingPathComponent("sheet.png"), to: sheet)
         var entry = candidate
         entry["sheet"] = "sprites/\(name).png"
+        if let displayName { entry["name"] = displayName }
         avatars[name] = entry
         config["avatars"] = avatars
         let json = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
@@ -829,12 +844,12 @@ func moveOldData() {
 
 moveOldData()
 let arguments = CommandLine.arguments
-// `DeskBuddy --sheet out.png [avatar]`: a configured avatar, or the bundled one, in every mood.
+// `DeskBuddy --sheet out.png [avatar]`: any avatar, kyle if none is named, in every mood.
 if (3...4).contains(arguments.count), arguments[1] == "--sheet" {
     let library = AvatarLibrary()
     library.refresh()
-    if arguments.count == 4, arguments[3] != "builtin", !library.has(arguments[3]) { fail(["no avatar named \(arguments[3])"]) }
-    do { try writeSheetPreview(library.sprite(arguments.count == 4 ? arguments[3] : "builtin"), to: arguments[2]) } catch { fail([String(describing: error)]) }
+    if arguments.count == 4, !library.has(arguments[3]) { fail(["no avatar named \(arguments[3])"]) }
+    do { try writeSheetPreview(library.sprite(arguments.count == 4 ? arguments[3] : defaultAvatar), to: arguments[2]) } catch { fail([String(describing: error)]) }
     exit(0)
 }
 // `DeskBuddy --check-avatar <folder> <preview.png>`: is this generated avatar ready, and how does it look?
@@ -845,9 +860,9 @@ if arguments.count == 4, arguments[1] == "--check-avatar" {
     print("Ready to install. Preview: \(arguments[3])")
     exit(0)
 }
-// `DeskBuddy --install-avatar <name> <folder>`: add a generated avatar to avatars.json.
-if arguments.count == 4, arguments[1] == "--install-avatar" {
-    installAvatar(arguments[2], from: URL(fileURLWithPath: arguments[3]))
+// `DeskBuddy --install-avatar <name> <folder> [display name]`: add a generated avatar to avatars.json.
+if (4...5).contains(arguments.count), arguments[1] == "--install-avatar" {
+    installAvatar(arguments[2], from: URL(fileURLWithPath: arguments[3]), displayName: arguments.count == 5 ? arguments[4] : nil)
     exit(0)
 }
 
