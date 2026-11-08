@@ -6,21 +6,27 @@
 # scripts/dist.sh calls this and copies the zip into dist/.
 set -eu
 [ "$(uname)" = Darwin ] || { echo "DeskBuddy builds on macOS only" >&2; exit 1; }
-command -v swiftc >/dev/null || { echo "swiftc not found: run xcode-select --install" >&2; exit 1; }
+command -v swift >/dev/null || { echo "swift not found: run xcode-select --install" >&2; exit 1; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
+native="$(cd "$here/.." && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 out="$root/build/macos"
+scratch="$root/build/swiftpm" # SwiftPM's own build folder, kept between builds so they stay incremental
 app="$out/DeskBuddy.app"
 version="$(tr -d '[:space:]' < "$root/src/mod/VERSION")"
 
 rm -rf "$out"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+# The package at src/native builds the core and the AppKit layer, once per architecture.
+binaries=""
 for arch in arm64 x86_64; do
-  swiftc -O -target "$arch-apple-macos13" -framework AppKit -o "$out/DeskBuddy-$arch" "$here/DeskBuddy.swift"
+  set -- --package-path "$native" --scratch-path "$scratch" -c release --product DeskBuddy --triple "$arch-apple-macosx13.0"
+  swift build "$@"
+  binaries="$binaries $(swift build "$@" --show-bin-path)/DeskBuddy"
 done
-lipo -create "$out/DeskBuddy-arm64" "$out/DeskBuddy-x86_64" -output "$app/Contents/MacOS/DeskBuddy"
-rm "$out/DeskBuddy-arm64" "$out/DeskBuddy-x86_64"
+# shellcheck disable=SC2086
+lipo -create $binaries -output "$app/Contents/MacOS/DeskBuddy"
 cp "$here"/../core/assets/*.png "$here"/../core/assets/*.json "$app/Contents/Resources/"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"

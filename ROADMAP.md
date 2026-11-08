@@ -38,8 +38,8 @@ Desk buddy runs on macOS and Windows, which means redesigning the native part so
 
 **Split the overlay in two**
 
-- [ ] Shared core: session reading, who works for whom (`cast`), movement, moods, animation timing, and `avatars.json` and sprite sheet handling. It goes in `src/native/core`. Everything is in `src/native/macos/DeskBuddy.swift` today, tied to AppKit.
-- [ ] Platform layer, one per OS, in `src/native/macos` and `src/native/windows`, covering:
+- [x] Shared core: session reading, who works for whom (`cast`), movement, moods, animation timing, and `avatars.json` and sprite sheet handling. It is `DeskBuddyCore` in `src/native/core`, Foundation only, with tests in `src/native/tests`.
+- [ ] Platform layer, one per OS, in `src/native/macos` and `src/native/windows`, covering the list below. The macOS layer is done; the Windows one is written but not yet built on Windows.
   - transparent, always-on-top, borderless windows
   - clicks that pass through everything but the buddy's body
   - pick up and drop with the mouse
@@ -49,9 +49,9 @@ Desk buddy runs on macOS and Windows, which means redesigning the native part so
 
 **Bring it to Windows**
 
-- [ ] Build the Windows platform layer, and a Windows installer. Its build writes `build/windows/DeskBuddy.zip` for `make dist` to pick up.
-- [ ] Build and test on both OSes in CI.
-- [ ] Move the macOS app onto the new core, with no change in behaviour.
+- [ ] Build the Windows platform layer, and a Windows installer. Its build writes `build/windows/DeskBuddy.zip` for `make dist` to pick up. `src/native/windows/build.ps1` writes the zip and `make dist` ships it when present; it needs a first run on Windows, and there is no installer yet.
+- [ ] Build and test on both OSes in CI. `.github/workflows/native.yml`, not yet run.
+- [x] Move the macOS app onto the new core, with no change in behaviour.
 
 **Make the mod cross-platform**
 

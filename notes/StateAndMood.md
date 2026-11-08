@@ -1,6 +1,6 @@
 # How the avatar changes between states
 
-Handoff note for agents working on `src/native/macos/DeskBuddy.swift`. Line numbers are from commit `92660d0` and may drift, so search by function name if they don't match. The sprite sheet rules are in `src/mod/tool-avatar-maker/AVATAR-SHEETS.md`.
+Handoff note for agents working on the overlay's behaviour. It was written against `src/native/macos/DeskBuddy.swift` at commit `92660d0`; that file has since been split, so search by function name and ignore the line numbers. `Stage`, `Buddy` and `Sprite` are in `src/native/core/`, and what `BuddyView` held is now `Look`, laid out by `Scene` (`src/native/core/Scene.swift`) and painted per OS (`src/native/macos/Overlay.swift`, `src/native/windows/app/Paint.swift`). `Stage.tick()` is now `Stage.housekeeping()`. The sprite sheet rules are in `src/mod/tool-avatar-maker/AVATAR-SHEETS.md`.
 
 ## Summary
 

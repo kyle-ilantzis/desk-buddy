@@ -3,6 +3,7 @@
 #
 #   dist/.claude-plugin/marketplace.json   a marketplace listing one plugin
 #   dist/desk-buddy/                       src/mod, versioned, plus app/DeskBuddy-macos.zip
+#                                          (and app/DeskBuddy-windows.zip when build/windows has one)
 #                                          and tool-avatar-maker/assets/ (src/native/core/assets)
 #
 # The native app is rebuilt only when src/native or src/mod/VERSION is newer than the last
@@ -47,6 +48,8 @@ rsync -a \
 rsync -a --exclude '.DS_Store' src/native/core/assets/ "$stage/desk-buddy/tool-avatar-maker/assets/"
 sed -i '' "s/\"version\": *\"[^\"]*\"/\"version\": \"$version\"/" "$stage/desk-buddy/.claude-plugin/plugin.json"
 cp "$zip" "$stage/desk-buddy/app/DeskBuddy-macos.zip"
+# Windows builds on Windows (src/native/windows/build.ps1); a zip copied in from there ships too.
+if [ -f build/windows/DeskBuddy.zip ]; then cp build/windows/DeskBuddy.zip "$stage/desk-buddy/app/DeskBuddy-windows.zip"; fi
 # dist/ becomes a repository of its own, so the license goes with it and with the plugin.
 cp LICENSE "$stage/LICENSE"
 cp LICENSE "$stage/desk-buddy/LICENSE"

@@ -4,7 +4,7 @@ How to tackle the native stack for [section 5 of the roadmap](../ROADMAP.md#5-wi
 
 ## Decisions
 
-- **Everything native stays in Swift.** Swift has official Windows support: the toolchain from swift.org, plus the Visual Studio Build Tools and the Windows SDK, gives `swift build` with Swift Package Manager as on macOS. The macOS app is already Swift (`src/native/macos/DeskBuddy.swift`), so nothing is rewritten.
+- **Everything native stays in Swift.** Swift has official Windows support: the toolchain from swift.org, plus the Visual Studio Build Tools and the Windows SDK, gives `swift build` with Swift Package Manager as on macOS. The macOS app was already Swift (one file, `src/native/macos/DeskBuddy.swift`), so nothing was rewritten.
 - **The core is written once.** It imports only Foundation, never AppKit or WinSDK.
 - **Each OS layer calls its own APIs directly.** AppKit on macOS, and Win32 through `import WinSDK` on Windows. There is no UI framework in between.
 - **Each OS builds on that OS.** Building the Windows app from macOS isn't practical, so Windows builds run on a Windows machine or a Windows CI runner.
@@ -58,8 +58,19 @@ How each item of the platform layer maps to Win32:
 
 ## Plan
 
-- [ ] **Prove the hard part first.** A Swift spike on Windows: one layered, always-on-top window showing a sprite, where clicks on transparent pixels reach the window below and clicks on the sprite pick it up.
-- [ ] Add `src/native/Package.swift` with the three targets, and build the macOS app through it with no change in behaviour.
-- [ ] Move the shared logic out of `DeskBuddy.swift` into `DeskBuddyCore`, behind the platform protocols.
-- [ ] Build the Windows layer against those protocols, and have its build write `build/windows/DeskBuddy.zip`, runtime DLLs included.
-- [ ] Build and test both OSes in CI.
+- [ ] **Prove the hard part first.** A Swift spike on Windows: one layered, always-on-top window showing a sprite, where clicks on transparent pixels reach the window below and clicks on the sprite pick it up. Not done as a separate spike: the Windows layer was written straight against the core, on macOS, so the first Windows build and run is the spike.
+- [x] Add `src/native/Package.swift` with the three targets, and build the macOS app through it with no change in behaviour. `build.sh` runs `swift build` once per architecture and joins them with `lipo`; the `--sheet` previews of both bundled avatars match the old app's pixel for pixel.
+- [x] Move the shared logic out of `DeskBuddy.swift` into `DeskBuddyCore`, behind the platform protocols. `swift test` runs the core's tests against a stand-in OS.
+- [ ] Build the Windows layer against those protocols, and have its build write `build/windows/DeskBuddy.zip`, runtime DLLs included. Written (`src/native/windows/app`, `build.ps1`) but not yet compiled or run on Windows.
+- [ ] Build and test both OSes in CI. `.github/workflows/native.yml` does both; it hasn't run yet.
+
+## How it came out
+
+- **Geometry.** Foundation on macOS has `CGRect` but none of its methods without CoreGraphics, so the core has its own `Point`, `Size` and `Rect` in `Double`, y up as on macOS. The Windows layer flips y at its edge against the main screen's height (`Win32.swift`).
+- **Images.** The core never decodes a file. `ImageLoader` hands it a `Bitmap` of premultiplied RGBA, which it reads for the body's size and the avatar checks, and the decoded native image rides along in `Bitmap.native` for drawing: a `CGImage` on macOS, a GDI+ bitmap on Windows.
+- **Drawing.** The core lays a buddy out as a `Scene` (shadow, sprite cell and mirroring, the "z", the name tag and its tint) from a `Look`, and each OS only paints it. Text measuring is passed in, since fonts are the OS's. `--sheet` and `--check-avatar` previews use the same path.
+- **Transport.** The HTTP parsing and replies are in the core (`HTTP.swift`). macOS keeps its Unix socket; Windows listens on the named pipe `\\.\pipe\DeskBuddy-%USERNAME%`, which Node's `socketPath` reaches as it does a Unix socket. The pipe threads hand each request to the main thread with `SendMessageW`.
+- **GDI+ from Swift.** Windows' `gdiplus.h` is C++ only, so the flat API calls are declared again in C in `src/native/windows/gdiplus` (the `CGdiPlus` target).
+- **Timer.** Each layer calls `Stage.tick(dt)` 20 times a second; the stage does its once-a-second housekeeping itself.
+
+Still open on Windows: DPI awareness (it runs unaware, so Windows scales it), an app icon (the tray uses the stock one), and an installer. The mod's `WindowsBridge` is section 5's next part.

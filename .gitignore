@@ -1,3 +1,6 @@
 build/
 dist/
 .DS_Store
+# SwiftPM, when run in src/native without build.sh's --scratch-path
+src/native/.build/
+src/native/.swiftpm/

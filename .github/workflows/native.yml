@@ -1,0 +1,44 @@
+# Builds and tests the native app on each OS it runs on. Each OS builds on its own
+# runner: the macOS app with src/native/macos/build.sh, the Windows one with
+# src/native/windows/build.ps1. The shared core's tests run on both.
+name: native
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/native/**', 'src/mod/VERSION', '.github/workflows/native.yml']
+  pull_request:
+    paths: ['src/native/**', 'src/mod/VERSION', '.github/workflows/native.yml']
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the core
+        run: swift test --package-path src/native --scratch-path build/swiftpm
+      - name: Build DeskBuddy.app
+        run: src/native/macos/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskBuddy-macos
+          path: build/macos/DeskBuddy.zip
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.1-release
+          swift-build: 6.1-RELEASE
+      - name: Test the core
+        run: swift test --package-path src/native --scratch-path build/swiftpm
+      - name: Build DeskBuddy.exe
+        shell: pwsh
+        run: src/native/windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskBuddy-windows
+          path: build/windows/DeskBuddy.zip
