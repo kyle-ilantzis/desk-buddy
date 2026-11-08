@@ -83,6 +83,17 @@ Desk buddy runs on macOS and Windows, which means redesigning the native part so
 - [ ] Stop relying on `HOME` and on `/` as the path separator.
 - [ ] Make `/desk-buddy create` work on Windows. The avatar maker generates sheets with `swift` and `sips`, which are macOS tools, and its permissions name them too.
 
+## 6. Bigger buddies
+
+Let the person make the buddy bigger. Its size is fixed today: a sheet is drawn about 64 points tall (`spriteFit`), or at its own `scale` in `avatars.json`, and never larger than 256 points (`spriteMax`).
+
+- [ ] Add a size setting to the menu bar menu, such as small, medium, large and extra large, that multiplies the scale each sheet is drawn at.
+- [ ] Keep pixel art sharp: draw with nearest-neighbour sampling, and prefer whole-number scales for sheets that are already pixel-fitted.
+- [ ] Raise or remove `spriteMax` so that the largest size isn't capped, and grow everything sized from the body with it: the window (`windowSize`), the shadow, the hop, the nap "z" and the name tag's place above the body (`tagGap`).
+- [ ] Keep a big buddy on screen: wandering, napping spots (`randomSpot`) and drops after a pick-up should fit the larger window inside the usable area.
+- [ ] Apply a new size to buddies already out, without a relaunch, and save it as the default so it survives one.
+- [ ] Decide whether size is one setting for every buddy or set per buddy, and whether `/desk-buddy` gets a command for it.
+
 ## Suggested order
 
 1. **Standalone**, since it is small and stands alone.
@@ -90,7 +101,8 @@ Desk buddy runs on macOS and Windows, which means redesigning the native part so
 3. **The mod installs the app**, since until then everyone with the mod has a manual step.
 4. **The core and platform split**, before any new UI, so that the picker is not written in AppKit and then rewritten.
 5. **The buddy picker**, on the new structure.
-6. **The Windows platform layer**, then the mod changes and the installer.
+6. **Bigger buddies**, as a setting beside the picker, so that it is also built on the new structure.
+7. **The Windows platform layer**, then the mod changes and the installer.
 
 ## Open questions
 
