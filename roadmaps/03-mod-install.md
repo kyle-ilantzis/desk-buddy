@@ -29,7 +29,7 @@ dist/                    what ships, ignored by git
 
 - [x] `make install-dev` adds `dist/` as a local marketplace and installs `desk-buddy@desk-buddy` from it. A marketplace that is a folder with a relative `source` is read in place, so Claude Code runs `dist/desk-buddy/` itself, and `/reload-plugins` picks up a rebuild with no reinstall.
 - [x] A `PostToolUse` hook in `.claude/settings.json` runs `scripts/dist.sh --hook` after Claude edits a file, and rebuilds when the file is under `src/`. Edits made by hand need `make dist`.
-- [ ] Remove `CLAUDE_CODE_PLUGIN_DIRS` from `~/.claude/settings.json` on each development machine, so the mod isn't loaded twice. It pointed at the old `mod/` folder.
+- [x] Remove `CLAUDE_CODE_PLUGIN_DIRS` from `~/.claude/settings.json` on each development machine, so the mod isn't loaded twice. It pointed at the old `mod/` folder.
 - [ ] Consider `make watch` for hand edits. There is no `fswatch` or `entr` here, so it would be a small `node` script using `fs.watch`.
 
 ## Carry the build
@@ -39,6 +39,7 @@ dist/                    what ships, ignored by git
 
 ## Install it
 
+- [ ] Put each OS-specific step below behind `OSBridge` in `src/mod/hooks/os-bridge.ts`, implemented in `MacOsBridge`, with `WindowsBridge` throwing until section 5. Likely methods: `installedApp(env)` (the places to look for the app), `unpackApp(archive, into)` (`ditto` on macOS), `launchAppAt(path)`, and `appVersionOf(path)` (read from `Info.plist`). A bridge only returns commands and paths, and `register.ts` makes the calls on `$`, because the engine won't load a module that passes `$` to an object's method.
 - [ ] On `session.start` and `/desk-buddy start`, install the app from `$.plugin.root/app/` if it is missing, then open it. These are the only two places that open the app today, and that has to stay true so that a quit isn't undone by a heartbeat.
 - [ ] Unpack with `ditto` to a temporary folder beside the target, then move it into place. Sessions often start together, and neither should see a half-copied app.
 - [ ] Open the app by path after an install. `open -b` relies on Launch Services, which may not know about a freshly copied app yet.

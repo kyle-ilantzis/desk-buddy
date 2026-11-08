@@ -10,7 +10,16 @@
       "Bash(ls -la ~/.claude/desk-buddy ~/.claude/desk-buddy/sessions 2>&1 | head -30; cat ~/.claude/desk-buddy/avatars.json 2>/dev/null | head -30; cat macos/launch.sh; cat mod/types/index.d.ts mod/tsconfig.json .claude/settings.local.json; which bun deno node)",
       "Bash(git rm *)",
       "Bash(sed -i '' 's#\"Install the app\" in `src/mod/README.md`#\"Install\" in `README.md`#' roadmaps/03-mod-install.md)",
-      "Bash(make dist *)"
+      "Bash(make dist *)",
+      "Bash(python3 -)",
+      "Bash(make test *)",
+      "Bash(npx --no-install tsc -p src/mod --noEmit)",
+      "Bash(grep -rn -i 'spelled\\\\|a helper\\\\|helpers\\\\|static.*\\\\$\\\\|read off its source' .)",
+      "Bash(cp src/mod/hooks/register.ts /private/tmp/claude-501/-Users-kyle--claude-spares-spare-pz887F/d1b74a7a-2c4f-467e-b91c-7a0c0494855b/scratchpad/register.bak.ts)",
+      "Bash(sed -i '' 's|^const socketPathOf = .*|const socketPathOf = async \\($: Engine\\) => { await osBridge\\($\\); return \"x\" }|' src/mod/hooks/register.ts)",
+      "Bash(grep -m2 -E \"HooksError|pass$\")",
+      "Bash(scripts/dist.sh)",
+      "Bash(grep -v \"^\\\\s*$\")"
     ]
   }
 }

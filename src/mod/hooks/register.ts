@@ -1,9 +1,11 @@
 import type { CoreEngineInterface as Engine, Register } from 'claude-code'
+import { bridgeFor, type Command, type OSBridge } from './os-bridge.ts'
 
 // The mod runs inside Claude Code and cannot draw outside its window, so it
 // only reports. Each session posts a full snapshot of itself over a Unix socket,
-// and the native overlay app (../native/macos/DeskBuddy.swift) animates an avatar for each
+// and the native overlay app (../native/<os>/) animates an avatar for each
 // session at work, or stopped less than a minute ago by `idleSince`.
+// What depends on the OS goes through ./os-bridge.ts.
 // Only the project folder's name, tool names and the avatar's name are sent:
 // never prompts, commands or file contents.
 
@@ -12,7 +14,6 @@ type Mood =
   | 'running' | 'browsing' | 'delegating' | 'waiting' | 'done' | 'error' | 'ended'
 
 const HEARTBEAT_MS = 15_000
-const BUNDLE_ID = 'kyleilantzis.desk-buddy.overlay'
 const PROTOCOL = 1
 const END_WAIT_MS = 500 // a session's last report gets this long before the session closes
 const QUIT_WAIT_MS = 2_000 // a hung app gets this long to answer a quit
@@ -58,7 +59,13 @@ let seq = 0
 let lastSent: Promise<unknown> = Promise.resolve()
 const makers = new Map<string, string>() // a running avatar maker's agent id, to the avatar it is making
 
-const socketPathOf = async ($: Engine) => `${await $.env.get('HOME')}/Library/Application Support/DeskBuddy/buddy.sock`
+let bridge: OSBridge | undefined
+const osBridge = async ($: Engine) => (bridge ??= bridgeFor(await $.env.get('OS')))
+// A bridge only says what to run: the calls on `$` stay in this module.
+const run = ($: Engine, { argv, timeoutMs }: Command) =>
+  $.process.run(argv, timeoutMs === undefined ? undefined : { timeoutMs })
+
+const socketPathOf = async ($: Engine) => (await osBridge($)).socketPath({ HOME: await $.env.get('HOME') })
 
 async function report($: Engine, next: Mood, nextTool?: string, id?: string) {
   mood = next
@@ -100,11 +107,11 @@ async function quitApp($: Engine) {
   const quit = $.http.fetch('http://desk-buddy/quit', { method: 'POST', socketPath: await socketPathOf($) })
   const timeout = $.clock.sleep(QUIT_WAIT_MS).then(() => false)
   const quitting = await Promise.race([quit.then(reply => reply.ok), timeout]).catch(() => false)
-  if (!quitting) await $.process.run(['/usr/bin/pkill', '-x', 'DeskBuddy'])
+  if (!quitting) await run($, (await osBridge($)).killApp())
 }
 
-function launchOverlay($: Engine) {
-  return $.process.run(['/usr/bin/open', '-g', '-b', BUNDLE_ID], { timeoutMs: 10_000 })
+async function launchOverlay($: Engine) {
+  return run($, (await osBridge($)).launchApp())
 }
 
 // The avatars in the app's avatars.json, each id to its display name if it has one;
@@ -154,7 +161,7 @@ function words(text: string): string[] {
 
 // Nobody answers a background agent's prompts, so each is settled here. The
 // paths a maker writes stay in its jobs folder, and it runs only its own tools.
-function makerDecision(tool: string, input: Record<string, unknown>, { dataFolder, binary }: Place) {
+function makerDecision(tool: string, input: Record<string, unknown>, { dataFolder, binary }: Place, makerCommands: readonly string[]) {
   const path = String(input.file_path ?? '')
   const command = String(input.command ?? '')
   const inJobs = path.startsWith(`${dataFolder}/jobs/`) && !path.split('/').includes('..')
@@ -162,11 +169,11 @@ function makerDecision(tool: string, input: Record<string, unknown>, { dataFolde
   const allowed =
     /^(Read|Glob|Grep|LS)$/.test(tool) ||
     (/^(Write|Edit|MultiEdit)$/.test(tool) && inJobs) ||
-    (tool === 'Bash' && plain && (/^(swift|swiftc|sips) /.test(command) ||
+    (tool === 'Bash' && plain && (makerCommands.some(name => command.startsWith(`${name} `)) ||
       command.startsWith(`${binary} --check-avatar `) || command.startsWith(`${binary} --install-avatar `)))
   return allowed
     ? { behavior: 'allow' as const }
-    : { behavior: 'deny' as const, message: 'An avatar maker writes only in its job folder and runs only swift, swiftc, sips and DeskBuddy, one command at a time.' }
+    : { behavior: 'deny' as const, message: `An avatar maker writes only in its job folder and runs only ${makerCommands.join(', ')} and DeskBuddy, one command at a time.` }
 }
 
 async function createAvatar($: Engine, [name = '', ...images]: string[]): Promise<string> {
@@ -197,12 +204,13 @@ async function createAvatar($: Engine, [name = '', ...images]: string[]): Promis
 
   // Copies, so a picture moved later can't stop the job and the agent keeps to one folder.
   const job = `${dataFolder}/jobs/${id}`
-  await $.process.run(['/bin/rm', '-rf', job])
-  await $.process.run(['/bin/mkdir', '-p', `${job}/input`, `${job}/out`])
+  const os = await osBridge($)
+  await run($, os.removeFolder(job))
+  await run($, os.makeFolders([`${job}/input`, `${job}/out`]))
   const copies: string[] = []
   for (const [i, path] of paths.entries()) {
     const copy = `${job}/input/${i + 1}-${path.split('/').pop()}`
-    const ran = await $.process.run(['/bin/cp', path, copy])
+    const ran = await run($, os.copyFile(path, copy))
     if (ran.exitCode !== 0) return `Could not copy ${path}: ${ran.stderr.slice(0, 200)}`
     copies.push(copy)
   }
@@ -249,7 +257,7 @@ async function rememberDefault($: Engine, dataFolder: string, name: string) {
   if (config.default === name) return
   config.default = name
   await $.fs.write(`${path}.tmp`, JSON.stringify(config, null, 2))
-  const moved = await $.process.run(['/bin/mv', '-f', `${path}.tmp`, path])
+  const moved = await run($, (await osBridge($)).replaceFile(`${path}.tmp`, path))
   if (moved.exitCode !== 0) throw new Error(moved.stderr)
 }
 
@@ -338,7 +346,8 @@ export const register: Register = on => {
     if (e.agent_type === MAKER_TYPE) {
       const found = await locate($)
       if (found === undefined) return { decision: { behavior: 'deny' as const, message: APP_CLOSED } }
-      return { decision: makerDecision(e.tool_name, (e.tool_input ?? {}) as Record<string, unknown>, found) }
+      const makerCommands = (await osBridge($)).makerCommands()
+      return { decision: makerDecision(e.tool_name, (e.tool_input ?? {}) as Record<string, unknown>, found, makerCommands) }
     }
     await report($, 'waiting', tool)
     return next(e)
