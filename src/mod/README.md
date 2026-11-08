@@ -15,7 +15,17 @@ To move a buddy, press on its body and hold: it stops when the cursor is over it
 
 ## Install the app
 
-The mod opens the app but doesn't include it. Unzip `DeskBuddy-<version>.zip`, drag `DeskBuddy.app` into Applications and open it. It isn't notarized, so macOS blocks the first open: go to System Settings > Privacy & Security and choose Open Anyway. To build it yourself, which needs the Xcode command line tools, run `../macos/build.sh --install`.
+The mod opens the app but doesn't include it yet. Unzip `DeskBuddy-macos.zip` (in the plugin's `app/` folder), drag `DeskBuddy.app` into Applications and open it. It isn't notarized, so macOS blocks the first open: go to System Settings > Privacy & Security and choose Open Anyway. To build it yourself, which needs the Xcode command line tools, run `../native/macos/build.sh --install`.
+
+## Developing
+
+This folder is source. What Claude Code loads is `dist/desk-buddy/` at the repo root, which `make dist` builds from it and from `../native/`. Set it up once from the repo root:
+
+```bash
+make install-dev
+```
+
+That builds `dist/`, adds it as a local marketplace and installs `desk-buddy` from it. Because the marketplace is a folder, Claude Code runs the plugin straight from `dist/desk-buddy/`, so after each rebuild `/reload-plugins` in a session loads the new build. Edits Claude makes under `src/` rebuild `dist/` by themselves, through a hook in `.claude/settings.json`; run `make dist` after editing by hand.
 
 ## Making an avatar
 
@@ -29,7 +39,7 @@ It works in `~/Library/Application Support/DeskBuddy/jobs/mr-rex/`, keeping your
 
 ## Sprite sheet avatars
 
-Avatars are configured in `~/Library/Application Support/DeskBuddy/avatars.json`. The app also carries two of its own, `kyle` and `melody`, as `../macos/assets/<name>.png` and `<name>.json`. A name is looked up in `avatars.json` first, so an entry called `melody` wins over the bundled one. Without that file every buddy is `kyle`. `../macos/archive/DeskBuddy-drawn.swift` is the code that drew it, kept to regenerate it. `builtin`, its old name, still works in a saved pick.
+Avatars are configured in `~/Library/Application Support/DeskBuddy/avatars.json`. The app also carries two of its own, `kyle` and `melody`, as `../native/core/assets/<name>.png` and `<name>.json`. A name is looked up in `avatars.json` first, so an entry called `melody` wins over the bundled one. Without that file every buddy is `kyle`. `../native/macos/archive/DeskBuddy-drawn.swift` is the code that drew it, kept to regenerate it. `builtin`, its old name, still works in a saved pick.
 
 ```json
 {

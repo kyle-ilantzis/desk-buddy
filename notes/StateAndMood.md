@@ -1,6 +1,6 @@
 # How the avatar changes between states
 
-Handoff note for agents working on `macos/DeskBuddy.swift`. Line numbers are from commit `92660d0` and may drift, so search by function name if they don't match. The sprite sheet rules are in `mod/AVATAR-SHEETS.md`.
+Handoff note for agents working on `src/native/macos/DeskBuddy.swift`. Line numbers are from commit `92660d0` and may drift, so search by function name if they don't match. The sprite sheet rules are in `src/mod/AVATAR-SHEETS.md`.
 
 ## Summary
 

@@ -1,0 +1,1 @@
+{ "name": "desk-buddy", "version": "0.0.0", "description": "A little avatar per working Claude session that walks around your Mac's screen and acts out what the session is doing.", "types": "./types/index.d.ts" }

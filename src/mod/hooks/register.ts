@@ -2,7 +2,7 @@ import type { CoreEngineInterface as Engine, Register } from 'claude-code'
 
 // The mod runs inside Claude Code and cannot draw outside its window, so it
 // only reports. Each session posts a full snapshot of itself over a Unix socket,
-// and the native overlay app (../macos/DeskBuddy.swift) animates an avatar for each
+// and the native overlay app (../native/macos/DeskBuddy.swift) animates an avatar for each
 // session at work, or stopped less than a minute ago by `idleSince`.
 // Only the project folder's name, tool names and the avatar's name are sent:
 // never prompts, commands or file contents.
