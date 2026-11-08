@@ -7,7 +7,10 @@
       "Bash(cd /Users/kyle/ClaudeBuddy/mod && wc -l types/index.d.ts && grep -n -iE \"agentId|'turn\\\\.\\(start|complete\\)'|'tool\\\\.call'|'session\\\\.\\(start|end\\)'|resume|TurnStart|TurnComplete|interface ToolCall|reason\" types/index.d.ts | head -60; cat .claude-plugin/plugin.json; claude plugin --help 2>&1 | head -30; pgrep -lx DeskBuddy; ls -la ~/.claude/desk-buddy ~/.claude/desk-buddy/sessions | head -40)",
       "Bash(grep -E '[c]laude\\( |$\\)|claude-code')",
       "Bash(awk '{print $11}')",
-      "Bash(ls -la ~/.claude/desk-buddy ~/.claude/desk-buddy/sessions 2>&1 | head -30; cat ~/.claude/desk-buddy/avatars.json 2>/dev/null | head -30; cat macos/launch.sh; cat mod/types/index.d.ts mod/tsconfig.json .claude/settings.local.json; which bun deno node)"
+      "Bash(ls -la ~/.claude/desk-buddy ~/.claude/desk-buddy/sessions 2>&1 | head -30; cat ~/.claude/desk-buddy/avatars.json 2>/dev/null | head -30; cat macos/launch.sh; cat mod/types/index.d.ts mod/tsconfig.json .claude/settings.local.json; which bun deno node)",
+      "Bash(git rm *)",
+      "Bash(sed -i '' 's#\"Install the app\" in `src/mod/README.md`#\"Install\" in `README.md`#' roadmaps/03-mod-install.md)",
+      "Bash(make dist *)"
     ]
   }
 }

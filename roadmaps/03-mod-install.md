@@ -62,4 +62,4 @@ dist/                    what ships, ignored by git
 
 - [ ] Test the first open on a clean account. A file a browser downloads is quarantined, but one unpacked by the mod may not be, which would remove the Open Anyway step until the release is notarized. This is unproven, and it decides what the README has to say.
 - [ ] Cover install, update, skip and failure in `src/mod/hooks/register.test.ts`.
-- [ ] Remove the manual steps from "Install the app" in `src/mod/README.md`, keeping `build.sh --install` for development, and add the `/plugin install` line once the release repository exists.
+- [ ] Remove the manual steps from "Install" in `README.md`, keeping `build.sh --install` for development, and add the `/plugin install` line once the release repository exists.
