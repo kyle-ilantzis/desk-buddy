@@ -34,7 +34,7 @@ Offer a set of buddies to pick from, inside the app.
 
 ## 5. Windows support
 
-Desk buddy runs on macOS and Windows, which means redesigning the native part so that the OS-specific code is small and sits behind one interface.
+Desk buddy runs on macOS and Windows, which means redesigning the native part so that the OS-specific code is small and sits behind one interface. The native stack and the split are planned in [roadmaps/05-os-core-split.md](roadmaps/05-os-core-split.md): a shared Swift core with an AppKit layer and a Win32 layer.
 
 **Split the overlay in two**
 
@@ -84,7 +84,7 @@ Let the person make the buddy bigger. Its size is fixed today: a sheet is drawn 
 
 ## Open questions
 
-- **What is the new native stack?** A shared core with a thin native layer per OS, or a cross-platform framework such as Tauri or Electron? Test the hard part first: per-pixel click-through on an always-on-top transparent window, on both OSes.
+- **Can Swift on Windows do per-pixel click-through?** The native stack is decided in [roadmaps/05-os-core-split.md](roadmaps/05-os-core-split.md): Swift everywhere, with a shared core and a native layer per OS. Its first step is a spike that tests this on an always-on-top transparent window.
 - **How is the app distributed?** For people with Claude Code, the mod carries it: `dist/` is published as a marketplace repository (section 3). People without Claude Code still need a download, and signing and notarizing on macOS, and code signing on Windows, decide whether they see security warnings when they first open it.
 - **Should the mod replace an app that is in use?** Updating as soon as a session starts is simple, but it interrupts the buddies of every other session for a moment. Waiting until the app is closed could leave an old app running for days.
 - **Should it start at login?** That fits an app that is always out, but it would be a new setting.
