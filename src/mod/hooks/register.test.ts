@@ -7,12 +7,27 @@ const BINARY = '/apps/DeskBuddy.app/Contents/MacOS/DeskBuddy'
 
 const AVATARS = JSON.stringify({ avatars: { fox: { sheet: 'fox.png', frameWidth: 32, frameHeight: 32 }, owl: {} } })
 
-const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/work/my-app' }, disk?: { config?: string, files: string[], moveFails?: boolean }, fetch?: () => unknown) => {
+// Where the app is on this machine, and what installing it does. By default it is in /Applications.
+// `versions` is each app's Info.plist, `carried` the plugin's VERSION, and `running` the version a running app reports.
+type Machine = {
+  apps: string[], archive?: boolean, unwritable?: string[], unpackFails?: boolean, openFails?: boolean, onMove?: () => void,
+  versions?: Record<string, string>, carried?: string, running?: string, onQuit?: () => void, moveInFails?: boolean,
+}
+const installedMachine = (): Machine => ({ apps: ['/Applications/DeskBuddy.app'] })
+
+const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/work/my-app' }, disk?: { config?: string, files: string[], moveFails?: boolean }, fetch?: () => unknown, machine: Machine = installedMachine()) => {
   const written: Record<string, any>[] = []
   let staged: string | undefined
   const current = () => (disk === undefined ? config : disk.config)
-  on('fs.exists', (_: unknown, e: any) => ({ value: disk?.files.includes(e.path) || (current() !== undefined && e.path.endsWith('avatars.json')) || (disk === undefined && config !== undefined) }))
-  on('fs.read', () => ({ value: current() }))
+  const versions = (machine.versions ??= {})
+  let alive = machine.running !== undefined
+  on('fs.exists', (_: unknown, e: any) => {
+    if (e.path.endsWith('.app')) return { value: machine.apps.includes(e.path) }
+    if (e.path.endsWith('/VERSION')) return { value: machine.carried !== undefined }
+    if (e.path.endsWith('.zip')) return { value: machine.archive ?? true }
+    return { value: disk?.files.includes(e.path) || (current() !== undefined && e.path.endsWith('avatars.json')) || (disk === undefined && config !== undefined) }
+  })
+  on('fs.read', (_: unknown, e: any) => ({ value: e.path.endsWith('/VERSION') ? `${machine.carried}\n` : current() }))
   on('env.get', () => ({ value: HOME }))
   on('session.id', () => ({ value: 's1' }))
   on('session.root', () => ({ value: root.path }))
@@ -22,6 +37,37 @@ const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/
   on('agent.register', () => ({ value: { agent: 'desk-buddy:avatar-maker' } }))
   on('process.run', (_: unknown, e: any) => {
     ran.push([...e.argv])
+    const fail = (stderr: string) => ({ value: { exitCode: 1, stdout: '', stderr } })
+    if (e.argv[0] === '/bin/mkdir' && machine.unwritable?.some(folder => e.argv.at(-1).startsWith(`${folder}/`))) return fail('Permission denied')
+    const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } })
+    if (e.argv[0] === '/usr/bin/ditto') {
+      if (machine.unpackFails) return fail('ditto: Couldn\'t read PKZip signature')
+      const app = `${e.argv[4]}/DeskBuddy.app`
+      machine.apps.push(app)
+      if (machine.carried !== undefined) versions[app] = machine.carried
+      return ok()
+    }
+    if (e.argv[0] === '/usr/bin/open' && machine.openFails) return fail('LSOpenURLsWithRole() failed')
+    if (e.argv[0] === '/usr/bin/defaults') {
+      const app = e.argv[2].slice(0, -'/Contents/Info'.length)
+      return machine.apps.includes(app) && versions[app] !== undefined ? ok(`${versions[app]}\n`) : fail('does not exist')
+    }
+    if (e.argv[0] === '/usr/bin/pgrep') return alive ? ok('123\n') : fail('')
+    if (e.argv[0] === '/usr/bin/pkill') alive = false
+    if (e.argv[0] === '/bin/rm') machine.apps = machine.apps.filter(app => !app.startsWith(`${e.argv[2]}/`))
+    // BSD mv -n into a folder: renames under the same name, and quietly skips a name that is taken.
+    if (e.argv[0] === '/bin/mv' && e.argv[1] === '-n') {
+      machine.onMove?.()
+      const from = e.argv[2]
+      const app = `${e.argv[3].slice(0, -1)}/DeskBuddy.app`
+      if (machine.moveInFails && !app.includes('/.DeskBuddy.app-') && from.split('/').at(-2)!.startsWith('.DeskBuddy.app-')) return fail('Operation not permitted')
+      if (!machine.apps.includes(app)) {
+        machine.apps = machine.apps.filter(path => path !== from)
+        machine.apps.push(app)
+        if (versions[from] !== undefined) versions[app] = versions[from]!
+      }
+      return ok()
+    }
     if (e.argv[0] === '/bin/mv') {
       if (disk?.moveFails) return { value: { exitCode: 1, stdout: '', stderr: 'disk full' } }
       if (disk !== undefined) disk.config = staged
@@ -41,9 +87,16 @@ const setUp = (on: any, config?: string, ran: string[][] = [], root = { path: '/
     if (fetch !== undefined) return fetch()
     expect(e.init.socketPath).toBe(SOCKET)
     if (e.url === 'http://desk-buddy/status') {
-      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/apps/DeskBuddy.app/Contents/Resources', bundled: ['kyle', 'melody'], future: 1 }) } }
+      // The update tests say whether the app runs; the others take it as running, as before.
+      if (machine.carried !== undefined && !alive) throw new Error('ECONNREFUSED')
+      const version = alive ? machine.running : undefined
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ dataFolder: DATA, binary: BINARY, resources: '/apps/DeskBuddy.app/Contents/Resources', bundled: ['kyle', 'melody'], version, future: 1 }) } }
     }
-    if (e.url === 'http://desk-buddy/quit') ran.push(['POST /quit'])
+    if (e.url === 'http://desk-buddy/quit') {
+      ran.push(['POST /quit'])
+      alive = false
+      machine.onQuit?.()
+    }
     else {
       expect(e.url).toBe('http://desk-buddy/report')
       written.push(JSON.parse(e.init.body))
@@ -97,6 +150,8 @@ test('a hung app holds up no tool call', async ($, on) => {
   expect(result).toEqual({ result: {} })
 })
 
+// session.start opens the app without waiting on it.
+const settle = () => new Promise(resolve => setTimeout(resolve, 20))
 const command = (args: string) => ({ command: 'desk-buddy', args })
 const start = { cwd: '/work/my-app', surface: 'desktop', isInteractive: true } as const
 
@@ -238,6 +293,7 @@ test('start launches the overlay', async ($, on) => {
   const ran: string[][] = []
   setUp(on, undefined, ran)
   await $.session.start(start)
+  await settle()
   const launchesAtStart = ran.length
   const answer = await $.command.run(command('start'))
   expect(answer.text).toContain('Desk buddies are out')
@@ -448,4 +504,249 @@ test('a maker gets only its own tools, and its prompts wake no buddy', async ($,
   expect(await ask('Bash', { command: 'rm -rf /' })).toBe('deny')
   expect(await ask('WebFetch', { url: 'https://example.com' })).toBe('deny')
   expect(written.some(w => w.mood === 'waiting')).toBe(false)
+})
+
+const ROOT_APP = '/Applications/DeskBuddy.app'
+const HOME_APP = `${HOME}/Applications/DeskBuddy.app`
+const installSteps = (ran: string[][]) => ran.filter(argv => ['/bin/mkdir', '/usr/bin/ditto', '/bin/mv', '/bin/rm', '/usr/bin/open'].includes(argv[0]!))
+
+test('start installs a missing app into /Applications, then opens it by path', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [] }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Installed DeskBuddy in /Applications. Desk buddies are out.')
+
+  const steps = installSteps(ran)
+  const staging = steps[0]!.at(-1)!
+  expect(staging.startsWith('/Applications/.DeskBuddy.app-')).toBe(true)
+  expect(steps).toEqual([
+    ['/bin/mkdir', '-p', staging],
+    ['/usr/bin/ditto', '-x', '-k', steps[1]![3], staging],
+    ['/bin/mv', '-n', `${staging}/DeskBuddy.app`, '/Applications/'],
+    ['/bin/rm', '-rf', staging],
+    ['/usr/bin/open', '-g', ROOT_APP],
+  ])
+  expect(steps[1]![3]!.endsWith('/app/DeskBuddy-macos.zip')).toBe(true)
+  expect(machine.apps).toEqual([ROOT_APP])
+})
+
+test('an app already installed is opened by id and not installed again', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, undefined, { apps: [HOME_APP] })
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Desk buddies are out.')
+  expect(installSteps(ran)).toEqual([['/usr/bin/open', '-g', '-b', 'kyleilantzis.desk-buddy.overlay']])
+})
+
+test('a standard account gets the app in ~/Applications', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [], unwritable: ['/Applications'] }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe(`Installed DeskBuddy in ${HOME}/Applications. Desk buddies are out.`)
+  expect(machine.apps).toEqual([HOME_APP])
+  expect(ran.at(-1)).toEqual(['/usr/bin/open', '-g', HOME_APP])
+  // Nothing is left behind in either folder.
+  const made = ran.filter(argv => argv[0] === '/bin/mkdir').map(argv => argv.at(-1))
+  const removed = ran.filter(argv => argv[0] === '/bin/rm').map(argv => argv.at(-1))
+  expect(removed).toEqual([made[1]])
+})
+
+test('a session that loses the race opens the app the other one installed', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [], onMove: () => { if (!machine.apps.includes(ROOT_APP)) machine.apps.push(ROOT_APP) } }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toContain('Desk buddies are out')
+  expect(machine.apps).toEqual([ROOT_APP])
+})
+
+test('a mod without an archive says so and opens nothing', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, undefined, { apps: [], archive: false })
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Could not install DeskBuddy: this copy of the mod carries no app for macos.')
+  expect(installSteps(ran)).toEqual([])
+})
+
+test('a broken archive says why, cleans up and opens nothing', async ($, on) => {
+  const ran: string[][] = []
+  setUp(on, undefined, ran, undefined, undefined, undefined, { apps: [], unpackFails: true })
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toContain('Could not install DeskBuddy: its archive could not be unpacked: ditto:')
+  const steps = installSteps(ran)
+  expect(steps.at(-1)![0]).toBe('/bin/rm')
+  expect(steps.some(argv => argv[0] === '/usr/bin/open')).toBe(false)
+})
+
+test('with no folder to write to, start says so', async ($, on) => {
+  setUp(on, undefined, [], undefined, undefined, undefined, { apps: [], unwritable: ['/Applications', `${HOME}/Applications`] })
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe(`Could not install DeskBuddy: ${HOME}/Applications can't be written to.`)
+})
+
+test('an app that will not open says why', async ($, on) => {
+  setUp(on, undefined, [], undefined, undefined, undefined, { apps: [ROOT_APP], openFails: true })
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Could not open DeskBuddy: LSOpenURLsWithRole() failed')
+})
+
+test('a session start installs a missing app and notes it in the transcript', async ($, on) => {
+  const ran: string[][] = []
+  const logged: string[] = []
+  const machine: Machine = { apps: [] }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  on('ui.log', (_: unknown, e: any) => {
+    if (e.to !== 'debug') logged.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start(start)
+  await settle()
+  expect(machine.apps).toEqual([ROOT_APP])
+  expect(logged).toEqual(['desk-buddy: Installed DeskBuddy in /Applications.'])
+})
+
+test('a session start with the app in place adds nothing to the transcript', async ($, on) => {
+  const logged: string[] = []
+  setUp(on)
+  on('ui.log', (_: unknown, e: any) => {
+    if (e.to !== 'debug') logged.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start(start)
+  await settle()
+  expect(logged).toEqual([])
+})
+
+const updateSteps = (ran: string[][]) => ran.filter(argv => argv[0] === 'POST /quit' || ['/bin/mkdir', '/usr/bin/ditto', '/bin/mv', '/bin/rm', '/usr/bin/open', '/usr/bin/pkill'].includes(argv[0]!))
+
+test('a closed app older than the mod is replaced in place, then opened by path', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0' }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Updated DeskBuddy from 0.1.0 to 0.2.0. Desk buddies are out.')
+
+  const steps = updateSteps(ran)
+  const staging = steps[0]!.at(-1)!.slice(0, -'/old'.length)
+  expect(staging.startsWith('/Applications/.DeskBuddy.app-')).toBe(true)
+  expect(steps).toEqual([
+    ['/bin/mkdir', '-p', `${staging}/old`],
+    ['/usr/bin/ditto', '-x', '-k', steps[1]![3], staging],
+    ['/bin/mv', '-n', ROOT_APP, `${staging}/old/`],
+    ['/bin/mv', '-n', `${staging}/DeskBuddy.app`, '/Applications/'],
+    ['/bin/rm', '-rf', staging],
+    ['/usr/bin/open', '-g', ROOT_APP],
+  ])
+  expect(machine.apps).toEqual([ROOT_APP])
+  expect(machine.versions![ROOT_APP]).toBe('0.2.0')
+})
+
+test('a running app older than the mod is quit before it is replaced, then reopened', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', running: '0.1.0' }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Updated DeskBuddy from 0.1.0 to 0.2.0. Desk buddies are out.')
+  const steps = updateSteps(ran)
+  expect(steps[0]).toEqual(['POST /quit'])
+  expect(steps.some(argv => argv[0] === '/usr/bin/pkill')).toBe(false)
+  expect(steps.at(-1)).toEqual(['/usr/bin/open', '-g', ROOT_APP])
+  expect(machine.versions![ROOT_APP]).toBe('0.2.0')
+})
+
+test('the running app\'s own version decides, over the copy on disk', async ($, on) => {
+  const ran: string[][] = []
+  // Its Info.plist was already replaced by hand, but the old one is still running.
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.2.0' }, carried: '0.2.0', running: '0.1.0' }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Updated DeskBuddy from 0.1.0 to 0.2.0. Desk buddies are out.')
+  // Only the restart: the copy on disk is current.
+  expect(updateSteps(ran)).toEqual([['POST /quit'], ['/usr/bin/open', '-g', ROOT_APP]])
+})
+
+test('versions compare by number, not by text', async ($, on) => {
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.9.0' }, carried: '0.10.0' }
+  setUp(on, undefined, [], undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Updated DeskBuddy from 0.9.0 to 0.10.0. Desk buddies are out.')
+})
+
+for (const [installed, why] of [['0.3.0', 'a newer app, from build.sh --install'], ['0.2.0', 'the same version'], ['dev', 'an app with no version']] as const) {
+  test(`${why} is left alone and opened by id`, async ($, on) => {
+    const ran: string[][] = []
+    const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: installed }, carried: '0.2.0', running: installed }
+    setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+    const answer = await $.command.run(command('start'))
+    expect(answer.text).toBe('Desk buddies are out.')
+    expect(updateSteps(ran)).toEqual([['/usr/bin/open', '-g', '-b', 'kyleilantzis.desk-buddy.overlay']])
+  })
+}
+
+for (const [machine, why] of [
+  [{ apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', archive: false }, 'no app'],
+  [{ apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' } }, 'no VERSION'],
+] as [Machine, string][]) {
+  test(`a mod with ${why} updates nothing`, async ($, on) => {
+    setUp(on, undefined, [], undefined, undefined, undefined, machine)
+    const answer = await $.command.run(command('start'))
+    expect(answer.text).toBe('Desk buddies are out.')
+    expect(machine.versions![ROOT_APP]).toBe('0.1.0')
+  })
+}
+
+test('a session that updated first leaves this one only the reopening', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', running: '0.1.0' }
+  machine.onQuit = () => { machine.versions![ROOT_APP] = '0.2.0' }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Updated DeskBuddy from 0.1.0 to 0.2.0. Desk buddies are out.')
+  expect(ran.some(argv => argv[0] === '/usr/bin/ditto')).toBe(false)
+})
+
+test('an app in a folder that can\'t be written to stays, and still opens', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', unwritable: ['/Applications'] }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Could not update DeskBuddy to 0.2.0: /Applications can\'t be written to. Desk buddies are out.')
+  expect(ran.at(-1)).toEqual(['/usr/bin/open', '-g', '-b', 'kyleilantzis.desk-buddy.overlay'])
+  expect(machine.versions![ROOT_APP]).toBe('0.1.0')
+})
+
+test('a new copy that can\'t be moved in puts the old one back', async ($, on) => {
+  const ran: string[][] = []
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', running: '0.1.0', moveInFails: true }
+  setUp(on, undefined, ran, undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toBe('Could not update DeskBuddy to 0.2.0: it could not be moved into /Applications: Operation not permitted. Desk buddies are out.')
+  expect(machine.apps).toEqual([ROOT_APP])
+  expect(machine.versions![ROOT_APP]).toBe('0.1.0')
+  // It was quit for the update, so it is opened again.
+  expect(ran.at(-1)).toEqual(['/usr/bin/open', '-g', ROOT_APP])
+})
+
+test('a broken archive leaves the old app as it was', async ($, on) => {
+  const machine: Machine = { apps: [ROOT_APP], versions: { [ROOT_APP]: '0.1.0' }, carried: '0.2.0', unpackFails: true }
+  setUp(on, undefined, [], undefined, undefined, undefined, machine)
+  const answer = await $.command.run(command('start'))
+  expect(answer.text).toContain('Could not update DeskBuddy to 0.2.0: its archive could not be unpacked: ditto:')
+  expect(machine.apps).toEqual([ROOT_APP])
+})
+
+test('a session start notes an update in the transcript', async ($, on) => {
+  const logged: string[] = []
+  const machine: Machine = { apps: [HOME_APP], versions: { [HOME_APP]: '0.1.0' }, carried: '0.2.0' }
+  setUp(on, undefined, [], undefined, undefined, undefined, machine)
+  on('ui.log', (_: unknown, e: any) => {
+    if (e.to !== 'debug') logged.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start(start)
+  await settle()
+  expect(logged).toEqual(['desk-buddy: Updated DeskBuddy from 0.1.0 to 0.2.0.'])
+  expect(machine.versions![HOME_APP]).toBe('0.2.0')
 })

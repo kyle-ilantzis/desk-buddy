@@ -12,7 +12,7 @@ There is no release repository yet, so install from a clone:
 make install-dev
 ```
 
-The mod opens the app but doesn't install it yet. Unzip `dist/desk-buddy/app/DeskBuddy-macos.zip`, drag `DeskBuddy.app` into Applications and open it. It isn't notarized, so the first open needs System Settings > Privacy & Security > Open Anyway.
+The first session installs the app from the mod into `/Applications`, or `~/Applications` when that can't be written to, and opens it. It isn't notarized, so if macOS blocks the first open, use System Settings > Privacy & Security > Open Anyway.
 
 In a session, `/desk-buddy` lists the commands.
 
@@ -34,4 +34,4 @@ dist/.claude-plugin/marketplace.json
 dist/desk-buddy/                        src/mod, plus app/DeskBuddy-macos.zip
 ```
 
-The version comes from `VERSION`, stamped into the app and `plugin.json` at build time. The native app is rebuilt only when `src/native/` or `VERSION` changed. The plan for publishing `dist/` is in [roadmaps/03-mod-install.md](roadmaps/03-mod-install.md).
+The version comes from `src/mod/VERSION`, stamped into the app and `plugin.json` at build time. The native app is rebuilt only when `src/native/` or `src/mod/VERSION` changed. The plan for publishing `dist/` is in [roadmaps/03-mod-install.md](roadmaps/03-mod-install.md).

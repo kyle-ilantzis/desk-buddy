@@ -5,7 +5,7 @@
 #   dist/desk-buddy/                       src/mod, versioned, plus app/DeskBuddy-macos.zip
 #                                          and tool-avatar-maker/assets/ (src/native/core/assets)
 #
-# The native app is rebuilt only when something under src/native is newer than the last
+# The native app is rebuilt only when src/native or src/mod/VERSION is newer than the last
 # zip, so a mod-only change takes about a second. dist/ is replaced in one rename, so a
 # session that starts mid-build never reads half a plugin.
 #
@@ -30,10 +30,10 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
-version="$(tr -d '[:space:]' < VERSION)"
+version="$(tr -d '[:space:]' < src/mod/VERSION)"
 zip="build/macos/DeskBuddy.zip"
 
-if [ "${1:-}" = --native ] || [ ! -f "$zip" ] || [ -n "$(find src/native VERSION -newer "$zip" -type f -print -quit)" ]; then
+if [ "${1:-}" = --native ] || [ ! -f "$zip" ] || [ -n "$(find src/native src/mod/VERSION -newer "$zip" -type f -print -quit)" ]; then
   src/native/macos/build.sh
 fi
 
@@ -47,6 +47,9 @@ rsync -a \
 rsync -a --exclude '.DS_Store' src/native/core/assets/ "$stage/desk-buddy/tool-avatar-maker/assets/"
 sed -i '' "s/\"version\": *\"[^\"]*\"/\"version\": \"$version\"/" "$stage/desk-buddy/.claude-plugin/plugin.json"
 cp "$zip" "$stage/desk-buddy/app/DeskBuddy-macos.zip"
+# dist/ becomes a repository of its own, so the license goes with it and with the plugin.
+cp LICENSE "$stage/LICENSE"
+cp LICENSE "$stage/desk-buddy/LICENSE"
 cat > "$stage/.claude-plugin/marketplace.json" <<JSON
 {
   "name": "desk-buddy",

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds DeskBuddy.app for Apple silicon and Intel, and a zip of it, in build/macos at
-# the repo root. The version comes from VERSION at the repo root. It is signed ad hoc
+# the repo root. The version comes from src/mod/VERSION. It is signed ad hoc
 # only: there is no Developer ID, so it isn't notarized.
 # `build.sh --install` also puts it in /Applications and opens it, for development.
 # scripts/dist.sh calls this and copies the zip into dist/.
@@ -12,7 +12,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 out="$root/build/macos"
 app="$out/DeskBuddy.app"
-version="$(tr -d '[:space:]' < "$root/VERSION")"
+version="$(tr -d '[:space:]' < "$root/src/mod/VERSION")"
 
 rm -rf "$out"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"

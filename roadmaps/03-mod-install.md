@@ -7,7 +7,7 @@ That needs one place where the shipped plugin is put together, and a way to run 
 ## Layout
 
 ```
-VERSION                  one version for the app and the mod
+src/mod/VERSION          one version for the app and the mod, shipped in the plugin
 src/mod/                 the Claude Code mod, the same on macOS and Windows
 src/native/core/         what every OS shares: the bundled avatars today, the shared logic after section 5
 src/native/macos/        the AppKit app and build.sh
@@ -21,8 +21,8 @@ dist/                    what ships, ignored by git
 
 - [x] Move `mod/` to `src/mod/`, `macos/` to `src/native/macos/`, and the bundled avatars to `src/native/core/assets/`.
 - [x] `src/native/macos/build.sh` writes to `build/macos/`, with a fixed zip name, `DeskBuddy.zip`.
-- [x] Keep the versions together. `VERSION` is the only place the version is set. The build stamps it into the app's `Info.plist` and the plugin's `plugin.json`, and the copies in `src/` say `0.0.0`.
-- [x] `make dist` builds `dist/`. It rebuilds the native app only when something under `src/native` or `VERSION` is newer than the last zip, so a mod-only change takes under a second.
+- [x] Keep the versions together. `src/mod/VERSION` is the only place the version is set. The build stamps it into the app's `Info.plist` and the plugin's `plugin.json`, and the copies in `src/` say `0.0.0`.
+- [x] `make dist` builds `dist/`. It rebuilds the native app only when something under `src/native` or `src/mod/VERSION` is newer than the last zip, so a mod-only change takes under a second.
 - [x] `dist/` is staged in `build/dist.tmp/`, checked with `claude plugin validate`, and swapped in with one rename, so a session that starts mid-build never reads half a plugin and a failed build leaves the old one.
 
 ## Dev loading
@@ -39,28 +39,29 @@ dist/                    what ships, ignored by git
 
 ## Install it
 
-- [ ] Put each OS-specific step below behind `OSBridge` in `src/mod/hooks/os-bridge.ts`, implemented in `MacOsBridge`, with `WindowsBridge` throwing until section 5. Likely methods: `installedApp(env)` (the places to look for the app), `unpackApp(archive, into)` (`ditto` on macOS), `launchAppAt(path)`, and `appVersionOf(path)` (read from `Info.plist`). A bridge only returns commands and paths, and `register.ts` makes the calls on `$`, because the engine won't load a module that passes `$` to an object's method.
-- [ ] On `session.start` and `/desk-buddy start`, install the app from `$.plugin.root/app/` if it is missing, then open it. These are the only two places that open the app today, and that has to stay true so that a quit isn't undone by a heartbeat.
-- [ ] Unpack with `ditto` to a temporary folder beside the target, then move it into place. Sessions often start together, and neither should see a half-copied app.
-- [ ] Open the app by path after an install. `open -b` relies on Launch Services, which may not know about a freshly copied app yet.
-- [ ] Fall back to `~/Applications` when `/Applications` can't be written to, as on a standard account. The check for a missing app has to look in both.
-- [ ] Say what happened: a short note when the app is installed, and a clear reason when it can't be. Replace "Is DeskBuddy in Applications?" in `/desk-buddy start`.
+- [x] Put each OS-specific step below behind `OSBridge` in `src/mod/hooks/os-bridge.ts`, implemented in `MacOsBridge`, with `WindowsBridge` throwing until section 5. Likely methods: `installedApp(env)` (the places to look for the app), `unpackApp(archive, into)` (`ditto` on macOS), `launchAppAt(path)`, and `appVersionOf(path)` (read from `Info.plist`). A bridge only returns commands and paths, and `register.ts` makes the calls on `$`, because the engine won't load a module that passes `$` to an object's method.
+- [x] On `session.start` and `/desk-buddy start`, install the app from `$.plugin.root/app/` if it is missing, then open it. These are the only two places that open the app today, and that has to stay true so that a quit isn't undone by a heartbeat.
+- [x] Unpack with `ditto` to a temporary folder beside the target, then move it into place. Sessions often start together, and neither should see a half-copied app.
+- [x] Open the app by path after an install. `open -b` relies on Launch Services, which may not know about a freshly copied app yet.
+- [x] Fall back to `~/Applications` when `/Applications` can't be written to, as on a standard account. The check for a missing app has to look in both.
+- [x] Say what happened: a short note when the app is installed, and a clear reason when it can't be. Replace "Is DeskBuddy in Applications?" in `/desk-buddy start`.
 
 ## Update it
 
-- [ ] When the mod carries a newer version than the installed app, replace it. Both come from `VERSION`, so the plugin's version is the one to compare. `GET /status` gives the running app's version, and a closed app's version is in its `Info.plist`.
-- [ ] Quit a running app before replacing it, as `build.sh --install` does, then reopen it. Other sessions rebuild their buddies within one heartbeat.
-- [ ] Never replace a newer app with an older one, so that a build made with `build.sh --install` survives.
+- [x] When the mod carries a newer version than the installed app, replace it. Both come from `src/mod/VERSION`, so the plugin's version is the one to compare. `$.plugin` has no version, so the mod reads the `VERSION` file at its root, which `make dist` ships. `GET /status` gives the running app's version, and a closed app's version is in its `Info.plist`. Versions compare number by number, so 0.10.0 comes after 0.9.0.
+- [x] Quit a running app before replacing it, as `build.sh --install` does, then reopen it by path. It gets 5 seconds to exit before `pkill`. Other sessions rebuild their buddies within one heartbeat.
+- [x] Swap like an install: unpack beside the old app, move the old one aside, move the new one in, and put the old one back if the new one doesn't land. A failed update leaves the old app running and says why.
+- [x] Never replace a newer app with an older one, so that a build made with `build.sh --install` survives. An app whose version can't be read, such as `dev`, is never replaced.
 
 ## Release
 
 - [ ] Publish `dist/` to a GitHub repository of its own (or an orphan `dist` branch of this one), so that people install with `/plugin install desk-buddy --marketplace <owner>/<repo>`. The `marketplace.json` that `make dist` writes works there unchanged.
-- [ ] Bump `VERSION` for every release. An installed plugin from GitHub only updates when its version changes.
+- [ ] Bump `src/mod/VERSION` for every release. An installed plugin from GitHub only updates when its version changes.
 - [ ] Build `dist/` in CI on a tag, on macOS, and later on Windows as well, and push it to the release repository.
 - [ ] Sign and notarize the macOS app before it is called a release. Until then, the first open needs Open Anyway.
 
 ## Finish up
 
 - [ ] Test the first open on a clean account. A file a browser downloads is quarantined, but one unpacked by the mod may not be, which would remove the Open Anyway step until the release is notarized. This is unproven, and it decides what the README has to say.
-- [ ] Cover install, update, skip and failure in `src/mod/hooks/register.test.ts`.
+- [ ] Cover install, update, skip and failure in `src/mod/hooks/register.test.ts`. Done except a hung app that ignores the quit during an update: the test machine's `clock.sleep` never resolves.
 - [ ] Remove the manual steps from "Install" in `README.md`, keeping `build.sh --install` for development, and add the `/plugin install` line once the release repository exists.

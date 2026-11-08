@@ -17,6 +17,8 @@ const HEARTBEAT_MS = 15_000
 const PROTOCOL = 1
 const END_WAIT_MS = 500 // a session's last report gets this long before the session closes
 const QUIT_WAIT_MS = 2_000 // a hung app gets this long to answer a quit
+const EXIT_POLL_MS = 250 // how often an update checks that the app it quit is gone
+const EXIT_TRIES = 20 // after this many checks, the app is killed
 const STATUS_WAIT_MS = 1_000
 const APP_CLOSED = 'The app is not running. Run `/desk-buddy start`, then try again.'
 const FALLBACK = 'kyle' // the avatar worn when nothing else is picked
@@ -53,7 +55,7 @@ let tool: string | undefined
 let toolsInFlight = 0
 let idleSince: number | undefined // when the last turn ended: unset during one, and before the first
 let stopHeartbeat: (() => void) | undefined
-type Place = { dataFolder: string, binary: string, resources: string, bundled?: string[] }
+type Place = { dataFolder: string, binary: string, resources: string, bundled?: string[], version?: string }
 
 let place: Place | undefined // the app's last answer, for when it has since closed
 let seq = 0
@@ -94,14 +96,18 @@ async function report($: Engine, next: Mood, nextTool?: string, id?: string) {
   }
 }
 
-// Where the app keeps its data and its binary, which only it knows.
-async function locate($: Engine): Promise<Place | undefined> {
+// The running app's own answer, or nothing when it is closed or hung.
+async function askStatus($: Engine): Promise<Place | undefined> {
   const status = $.http.fetch('http://desk-buddy/status', { socketPath: await socketPathOf($) })
     .then(reply => (reply.ok ? JSON.parse(reply.text) as Place : undefined))
   const timeout = $.clock.sleep(STATUS_WAIT_MS).then(() => undefined)
-  place = (await Promise.race([status, timeout]).catch(() => undefined)) ?? place
-  return place
+  const found = await Promise.race([status, timeout]).catch(() => undefined)
+  if (found !== undefined) place = found
+  return found
 }
+
+// Where the app keeps its data and its binary, which only it knows.
+const locate = async ($: Engine): Promise<Place | undefined> => (await askStatus($)) ?? place
 
 // The same quit as the menu item. Only a closed or hung app gets the pkill.
 async function quitApp($: Engine) {
@@ -111,8 +117,154 @@ async function quitApp($: Engine) {
   if (!quitting) await run($, (await osBridge($)).killApp())
 }
 
-async function launchOverlay($: Engine) {
-  return run($, (await osBridge($)).launchApp())
+type Opened = { ok: boolean, note?: string }
+
+const folderOf = (path: string) => path.slice(0, path.lastIndexOf('/'))
+const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+const archiveOf = ($: Engine, os: OSBridge) => `${$.plugin.root}/app/${os.appArchive()}`
+// Unique to this try, so sessions starting together never share a staging folder.
+const stampOf = async ($: Engine) => `${await $.session.id()}-${await $.clock.now()}`
+
+// "1.2.10" as [1, 2, 10]. Anything else, like the "dev" of an app with no version, is undefined.
+const partsOf = (version: string | undefined) =>
+  version !== undefined && /^\d+(\.\d+)*$/.test(version) ? version.split('.').map(Number) : undefined
+
+// Whether `carried` comes after `installed`. A version that can't be read is never replaced.
+function isNewer(carried: string | undefined, installed: string | undefined): boolean {
+  const a = partsOf(carried)
+  const b = partsOf(installed)
+  if (a === undefined || b === undefined) return false
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const step = (a[i] ?? 0) - (b[i] ?? 0)
+    if (step !== 0) return step > 0
+  }
+  return false
+}
+
+// The version of the app the plugin carries: scripts/dist.sh ships src/mod/VERSION at its root.
+async function carriedVersion($: Engine): Promise<string | undefined> {
+  const path = `${$.plugin.root}/VERSION`
+  return (await $.fs.exists(path)) ? String(await $.fs.read(path)).trim() : undefined
+}
+
+async function versionAt($: Engine, os: OSBridge, path: string): Promise<string | undefined> {
+  const ran = await run($, os.appVersionOf(path))
+  return ran.exitCode === 0 ? ran.stdout.trim() : undefined
+}
+
+// A quit is answered before the app is gone. One still there after a while is killed.
+async function waitForExit($: Engine, os: OSBridge) {
+  for (let i = 0; i < 2 * EXIT_TRIES; i += 1) {
+    if ((await run($, os.appRunning())).exitCode !== 0) return
+    if (i === EXIT_TRIES) await run($, os.killApp())
+    await $.clock.sleep(EXIT_POLL_MS)
+  }
+}
+
+// Swaps the app at `path` for the one the plugin carries, and says why when it
+// can't. The new copy is unpacked beside the old first, so the app is missing only
+// between two renames, and the old one goes back if the new one doesn't land.
+async function replaceApp($: Engine, os: OSBridge, archive: string, path: string, version: string): Promise<string> {
+  const folder = folderOf(path)
+  const name = nameOf(path)
+  const staging = `${folder}/.${name}-${await stampOf($)}`
+  const aside = `${staging}/old`
+  if ((await run($, os.makeFolders([aside]))).exitCode !== 0) return `${folder} can't be written to`
+  try {
+    const unpacked = await run($, os.unpackApp(archive, staging))
+    if (unpacked.exitCode !== 0) return `its archive could not be unpacked: ${unpacked.stderr.trim().slice(0, 200)}`
+    // Either move may find another session's update got there first, which is as good.
+    await run($, os.moveInto(path, aside))
+    const moved = await run($, os.moveInto(`${staging}/${name}`, folder))
+    if (!(await $.fs.exists(path))) await run($, os.moveInto(`${aside}/${name}`, folder))
+    if (await versionAt($, os, path) === version) return ''
+    return `it could not be moved into ${folder}${moved.exitCode === 0 ? '' : `: ${moved.stderr.trim().slice(0, 200)}`}`
+  } finally {
+    await run($, os.removeFolder(staging))
+  }
+}
+
+type Updated = { note?: string, openByPath: boolean }
+
+// Replaces an app older than the one the plugin carries. A running one is quit
+// first and reopened after; other sessions rebuild their buddies on their next
+// heartbeat. A newer app, such as one from `build.sh --install`, is left alone.
+async function updateApp($: Engine, os: OSBridge, path: string): Promise<Updated> {
+  const carried = await carriedVersion($)
+  const archive = archiveOf($, os)
+  if (carried === undefined || !(await $.fs.exists(archive))) return { openByPath: false }
+  const running = await askStatus($)
+  const current = running?.version ?? await versionAt($, os, path)
+  if (!isNewer(carried, current)) return { openByPath: false }
+  if (running !== undefined) {
+    await quitApp($)
+    await waitForExit($, os)
+  }
+  // A session starting at the same time may have updated it while this one waited.
+  if (isNewer(carried, await versionAt($, os, path))) {
+    const why = await replaceApp($, os, archive, path, carried)
+    if (why !== '') return { note: `Could not update DeskBuddy to ${carried}: ${why}.`, openByPath: running !== undefined }
+  }
+  return { note: `Updated DeskBuddy from ${current} to ${carried}.`, openByPath: true }
+}
+
+// Puts the app the plugin carries in the first folder that takes it. Each try
+// unpacks beside its target and moves the app in whole, so a session starting at
+// the same time never opens half an app, and whichever move lands first wins.
+async function installApp($: Engine, os: OSBridge, places: string[]): Promise<{ path?: string, reason: string }> {
+  const archive = archiveOf($, os)
+  if (!(await $.fs.exists(archive))) return { reason: `this copy of the mod carries no app for ${os.os}` }
+  const stamp = await stampOf($)
+  let reason = ''
+  for (const path of places) {
+    const folder = folderOf(path)
+    const staging = `${folder}/.${nameOf(path)}-${stamp}`
+    const made = await run($, os.makeFolders([staging]))
+    if (made.exitCode !== 0) {
+      reason = `${folder} can't be written to`
+      continue
+    }
+    try {
+      const unpacked = await run($, os.unpackApp(archive, staging))
+      if (unpacked.exitCode !== 0) return { reason: `its archive could not be unpacked: ${unpacked.stderr.trim().slice(0, 200)}` }
+      const moved = await run($, os.moveInto(`${staging}/${nameOf(path)}`, folder))
+      if (moved.exitCode !== 0) {
+        reason = `it could not be moved into ${folder}: ${moved.stderr.trim().slice(0, 200)}`
+        continue
+      }
+    } finally {
+      await run($, os.removeFolder(staging))
+    }
+    if (await $.fs.exists(path)) return { path, reason: '' }
+  }
+  return { reason }
+}
+
+// Opens the app, installing it first if it is in none of its places, or updating
+// it if it is older than the plugin's. Only session.start and /desk-buddy start
+// call this, so a quit app stays quit.
+async function openApp($: Engine): Promise<Opened> {
+  const os = await osBridge($)
+  const places = os.installedApp({ HOME: await $.env.get('HOME') })
+  const present = await Promise.all(places.map(path => $.fs.exists(path)))
+  const installedAt = places[present.indexOf(true)]
+  let openAt: string | undefined
+  let note: string | undefined
+  if (installedAt === undefined) {
+    const installed = await installApp($, os, places)
+    if (installed.path === undefined) return { ok: false, note: `Could not install DeskBuddy: ${installed.reason}.` }
+    openAt = installed.path
+    note = `Installed DeskBuddy in ${folderOf(installed.path)}.`
+  } else {
+    const updated = await updateApp($, os, installedAt)
+    if (updated.openByPath) openAt = installedAt
+    note = updated.note
+  }
+  // A fresh copy is opened by path: the OS may not know its id, or its new version, yet.
+  const ran = await run($, openAt === undefined ? os.launchApp() : os.launchAppAt(openAt))
+  if (ran.exitCode === 0) return { ok: true, note }
+  const why = `Could not open DeskBuddy: ${ran.stderr.trim().slice(0, 300) || `exit code ${ran.exitCode}`}`
+  return { ok: false, note: note === undefined ? why : `${note} ${why}` }
 }
 
 // The avatars in the app's avatars.json, each id to its display name if it has one;
@@ -311,8 +463,9 @@ export const register: Register = on => {
     const beat = $.clock.every(HEARTBEAT_MS, () => { void report($, mood, tool) })
     stopHeartbeat = () => beat.cancel()
     // Only here and in /desk-buddy start: a failed report must never reopen a quit app.
-    void launchOverlay($).then(
-      ran => { if (ran.exitCode !== 0) $.ui.log(`desk-buddy: ${ran.stderr.slice(0, 300)}`, { to: 'debug' }) },
+    // An install or a failure is worth a line; opening as usual is not.
+    void openApp($).then(
+      ({ note }) => { if (note !== undefined) $.ui.log(`desk-buddy: ${note}`) },
       error => $.ui.log(`desk-buddy: ${String(error)}`, { to: 'debug' }),
     )
     return started
@@ -382,8 +535,8 @@ export const register: Register = on => {
       return { text: 'Desk buddies sent home. Run /desk-buddy start to bring them back.' }
     }
     if (verb === 'start') {
-      const ran = await launchOverlay($)
-      return { text: ran.exitCode === 0 ? 'Desk buddies are out.' : `Could not open the app. Is DeskBuddy in Applications? ${ran.stderr.slice(0, 300)}` }
+      const opened = await openApp($).catch((error: unknown): Opened => ({ ok: false, note: `Could not open DeskBuddy: ${String(error).slice(0, 300)}` }))
+      return { text: [opened.note, opened.ok ? 'Desk buddies are out.' : undefined].filter(Boolean).join(' ') }
     }
     if (verb === '' || verb === 'help') return { text: HELP }
     return { text: `Unknown option "${verb}".\n\n${HELP}` }
