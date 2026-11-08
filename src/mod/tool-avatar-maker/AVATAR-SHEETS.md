@@ -1,6 +1,6 @@
 # Avatar sprite sheets
 
-What a desk buddy sheet must hold. `../native/core/assets/kyle.png` and `kyle.json` are the `kyle` avatar: a complete example of every state, at a smaller frame size than generated avatars use.
+What a desk buddy sheet must hold. `assets/kyle.png` and `kyle.json`, beside this file in the installed plugin (copied from `src/native/core/assets/` by the dist build), are the `kyle` avatar: a complete example of every state, at a smaller frame size than generated avatars use.
 
 ## The states
 

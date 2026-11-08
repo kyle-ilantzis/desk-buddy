@@ -1,7 +1,7 @@
 // The overlay: one small window per buddy, walking the screen. Clicks pass through
 // all of it but the buddy's body, which can be picked up. Sessions report to it over a Unix socket, and it keeps
 // their reports in memory. It draws the sprite sheets bundled with the app, or one from avatars.json in its data folder.
-// The sheet's rules are in ../../mod/AVATAR-SHEETS.md.
+// The sheet's rules are in ../../mod/tool-avatar-maker/AVATAR-SHEETS.md.
 // Merely open sessions get no buddy: one is out per session at work, and one
 // always stays, resting, to take the next session that starts working.
 import AppKit

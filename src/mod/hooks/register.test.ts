@@ -375,7 +375,8 @@ test('create copies the images and starts the maker in the job folder', async ($
   expect(spawned[0]).toMatchObject({ subagent_type: 'desk-buddy:avatar-maker', cwd: job })
   // The data folder has a space in it, so the maker's commands quote their paths.
   expect(spawned[0].prompt).toContain(`${BINARY} --install-avatar rex "${job}/out" "rex"`)
-  expect(spawned[0].prompt).toContain('Example sheet: /apps/DeskBuddy.app/Contents/Resources/kyle.png')
+  expect(spawned[0].prompt).toMatch(/Spec: \S*\/tool-avatar-maker\/AVATAR-SHEETS\.md/)
+  expect(spawned[0].prompt).toMatch(/Example sheet: \S*\/tool-avatar-maker\/assets\/kyle\.png/)
   expect(spawned[0].prompt).toContain(`${BINARY} --check-avatar "${job}/out" "${job}/preview.png"`)
 })
 

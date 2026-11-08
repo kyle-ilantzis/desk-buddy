@@ -3,6 +3,7 @@
 #
 #   dist/.claude-plugin/marketplace.json   a marketplace listing one plugin
 #   dist/desk-buddy/                       src/mod, versioned, plus app/DeskBuddy-macos.zip
+#                                          and tool-avatar-maker/assets/ (src/native/core/assets)
 #
 # The native app is rebuilt only when something under src/native is newer than the last
 # zip, so a mod-only change takes about a second. dist/ is replaced in one rename, so a
@@ -42,6 +43,8 @@ mkdir -p "$stage/.claude-plugin" "$stage/desk-buddy/app"
 rsync -a \
   --exclude '*.test.ts' --exclude 'tsconfig.json' --exclude '.claude-plugin/types/' --exclude '.DS_Store' \
   src/mod/ "$stage/desk-buddy/"
+# The bundled avatars sit beside the maker's spec, as worked examples it can read.
+rsync -a --exclude '.DS_Store' src/native/core/assets/ "$stage/desk-buddy/tool-avatar-maker/assets/"
 sed -i '' "s/\"version\": *\"[^\"]*\"/\"version\": \"$version\"/" "$stage/desk-buddy/.claude-plugin/plugin.json"
 cp "$zip" "$stage/desk-buddy/app/DeskBuddy-macos.zip"
 cat > "$stage/.claude-plugin/marketplace.json" <<JSON

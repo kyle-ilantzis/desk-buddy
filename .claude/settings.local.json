@@ -19,7 +19,22 @@
       "Bash(sed -i '' 's|^const socketPathOf = .*|const socketPathOf = async \\($: Engine\\) => { await osBridge\\($\\); return \"x\" }|' src/mod/hooks/register.ts)",
       "Bash(grep -m2 -E \"HooksError|pass$\")",
       "Bash(scripts/dist.sh)",
-      "Bash(grep -v \"^\\\\s*$\")"
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(grep -v '^src/native/core/.*\\\\.\\\\\\(png\\\\|gif\\\\\\)$')",
+      "Bash(mkdir -p src/mod/tool-avatar-maker)",
+      "Bash(git mv *)",
+      "Bash(sed -i '' 's#src/mod/AVATAR-SHEETS.md#src/mod/tool-avatar-maker/AVATAR-SHEETS.md#g' ROADMAP.md notes/StateAndMood.md)",
+      "Bash(sed -i '' 's#\\\\.\\\\./\\\\.\\\\./mod/AVATAR-SHEETS.md#../../mod/tool-avatar-maker/AVATAR-SHEETS.md#' src/native/macos/DeskBuddy.swift)",
+      "Read(//Users/kyle/Library/Application Support/DeskBuddy/jobs/**)",
+      "Read(//Users/kyle/Library/Application Support/DeskBuddy/**)",
+      "Read(//Users/kyle/**)",
+      "Bash(/Applications/DeskBuddy.app/Contents/MacOS/DeskBuddy --check-avatar '/Users/kyle/Library/Application Support/DeskBuddy/jobs/sam/out' '/Users/kyle/Library/Application Support/DeskBuddy/jobs/sam/preview.png')",
+      "Bash(/Applications/DeskBuddy.app/Contents/MacOS/DeskBuddy --install-avatar sam '/Users/kyle/Library/Application Support/DeskBuddy/jobs/sam/out' sam)",
+      "Bash(cp avatars.json \"/private/tmp/claude-501/-Users-kyle--claude-spares-spare-UNXXMT/7094d80d-c298-442f-b8ae-d13ebd537822/scratchpad/avatars.backup.json\")",
+      "Bash(cp sprites/sam.png \"/private/tmp/claude-501/-Users-kyle--claude-spares-spare-UNXXMT/7094d80d-c298-442f-b8ae-d13ebd537822/scratchpad/sam.backup.png\")",
+      "Bash(jq 'del\\(.avatars.sam\\)' avatars.json)",
+      "Bash(mv avatars.json.tmp avatars.json)",
+      "Bash(rm sprites/sam.png)"
     ]
   }
 }

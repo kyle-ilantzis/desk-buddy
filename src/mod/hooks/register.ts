@@ -23,6 +23,7 @@ const FALLBACK = 'kyle' // the avatar worn when nothing else is picked
 const RETIRED = 'builtin' // kyle's old name: a saved pick can still say it, and the app dresses it as kyle
 const MAX_NAME = 32
 const MAKER = 'avatar-maker'
+const MAKER_DIR = 'tool-avatar-maker' // its prompt, spec and example sheets, under the plugin root
 const MAKER_TYPE = `desk-buddy:${MAKER}`
 const CREATE_USAGE = 'Usage: `/desk-buddy create <name> <image> [image...]`. Quote a name or a path with spaces in it.'
 const HELP = [
@@ -185,7 +186,7 @@ async function createAvatar($: Engine, [name = '', ...images]: string[]): Promis
   }
   const found = await locate($)
   if (found === undefined) return APP_CLOSED
-  const { dataFolder, binary, resources } = found
+  const { dataFolder, binary } = found
   if ([...bundledAvatars(found), RETIRED].includes(id)) return `"${id}" can't be an avatar's name: the app keeps it for its own.`
   let names: Map<string, string | undefined>
   try {
@@ -223,8 +224,8 @@ async function createAvatar($: Engine, [name = '', ...images]: string[]): Promis
       `Avatar name: ${name}`,
       `Job folder: ${job}`,
       `Images:\n${copies.map(copy => `- ${copy}`).join('\n')}`,
-      `Spec: ${$.plugin.root}/AVATAR-SHEETS.md`,
-      `Example sheet: ${resources}/${FALLBACK}.png, with ${FALLBACK}.json beside it`,
+      `Spec: ${$.plugin.root}/${MAKER_DIR}/AVATAR-SHEETS.md`,
+      `Example sheet: ${$.plugin.root}/${MAKER_DIR}/assets/${FALLBACK}.png, with ${FALLBACK}.json beside it. The other bundled avatars in that folder are examples too.`,
       `Check: ${binary} --check-avatar "${job}/out" "${job}/preview.png"`,
       `Install: ${binary} --install-avatar ${id} "${job}/out" "${name}"`,
     ].join('\n'),
@@ -300,7 +301,7 @@ export const register: Register = on => {
     await $.agent.register({
       name: MAKER,
       description: 'Turns reference images into a desk buddy sprite sheet. Started only by /desk-buddy create.',
-      prompt: String(await $.fs.read(`${$.plugin.root}/avatar-maker.md`)),
+      prompt: String(await $.fs.read(`${$.plugin.root}/${MAKER_DIR}/avatar-maker.md`)),
       tools: ['Read', 'Write', 'Edit', 'Bash'],
       omitClaudeMd: true,
     })

@@ -27,7 +27,7 @@ The source lives in `src/` (`src/mod`, and `src/native/{core,macos,windows}`), b
 
 Offer a set of buddies to pick from, inside the app.
 
-- [ ] Draw more buddies for the starter set and add them to the bundled list. Each needs all 13 states from [AVATAR-SHEETS.md](src/mod/AVATAR-SHEETS.md).
+- [ ] Draw more buddies for the starter set and add them to the bundled list. Each needs all 13 states from [AVATAR-SHEETS.md](src/mod/tool-avatar-maker/AVATAR-SHEETS.md).
 - [ ] Add a buddy picker to the app, with a preview of each one. Picking today needs `/desk-buddy avatar <name>`, so it needs a session.
 - [ ] Save the choice as the default, so it survives a relaunch.
 - [ ] List avatars made with `/desk-buddy create` in the picker beside the bundled ones.
