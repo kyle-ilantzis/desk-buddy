@@ -3,15 +3,16 @@
 #
 #   dist/.claude-plugin/marketplace.json   a marketplace listing one plugin
 #   dist/desk-buddy/                       src/mod, versioned, plus app/DeskBuddy-macos.zip
-#                                          (and app/DeskBuddy-windows.zip when build/windows has one)
+#                                          and/or app/DeskBuddy-windows.zip, whichever of
+#                                          build/macos and build/windows has a zip,
 #                                          and tool-avatar-maker/assets/ (src/native/core/assets)
 #
-# The native app is rebuilt only when src/native or src/mod/VERSION is newer than the last
-# zip, so a mod-only change takes about a second. dist/ is replaced in one rename, so a
-# session that starts mid-build never reads half a plugin.
+# The native app for this OS is rebuilt (as `make native` does) only when its zip is missing
+# or src/native or src/mod/VERSION is newer than it, so a mod-only change takes about a
+# second. The other OS's zip is shipped as it is, if it's there; at least one zip must exist.
+# dist/ is replaced in one rename, so a session that starts mid-build never reads half a plugin.
 #
 #   scripts/dist.sh                 build
-#   scripts/dist.sh --native        force a native rebuild
 #   scripts/dist.sh --hook          read a PostToolUse event on stdin; build only if the
 #                                   edited file is under src/
 set -eu
@@ -32,10 +33,23 @@ case "${1:-}" in
 esac
 
 version="$(tr -d '[:space:]' < src/mod/VERSION)"
-zip="build/macos/DeskBuddy.zip"
+macos_zip="build/macos/DeskBuddy.zip"
+windows_zip="build/windows/DeskBuddy.zip"
 
-if [ "${1:-}" = --native ] || [ ! -f "$zip" ] || [ -n "$(find src/native src/mod/VERSION -newer "$zip" -type f -print -quit)" ]; then
-  src/native/macos/build.sh
+case "$(uname)" in
+  Darwin) host_zip="$macos_zip"; build_native() { src/native/macos/build.sh; } ;;
+  MINGW*|MSYS*|CYGWIN*) host_zip="$windows_zip"
+    build_native() { powershell -NoProfile -ExecutionPolicy Bypass -File src/native/windows/build.ps1; } ;;
+  *) host_zip="" ;;
+esac
+if [ -n "$host_zip" ] && { [ ! -f "$host_zip" ] || [ -n "$(find src/native src/mod/VERSION -newer "$host_zip" -type f -print -quit)" ]; }; then
+  build_native
+fi
+
+if [ ! -f "$macos_zip" ] && [ ! -f "$windows_zip" ]; then
+  echo "no native build: neither $macos_zip nor $windows_zip exists" >&2
+  echo "run make native-macos (on macOS) or make native-windows (on Windows) first" >&2
+  exit 1
 fi
 
 stage="build/dist.tmp"
@@ -47,9 +61,9 @@ rsync -a \
 # The bundled avatars sit beside the maker's spec, as worked examples it can read.
 rsync -a --exclude '.DS_Store' src/native/core/assets/ "$stage/desk-buddy/tool-avatar-maker/assets/"
 sed -i '' "s/\"version\": *\"[^\"]*\"/\"version\": \"$version\"/" "$stage/desk-buddy/.claude-plugin/plugin.json"
-cp "$zip" "$stage/desk-buddy/app/DeskBuddy-macos.zip"
-# Windows builds on Windows (src/native/windows/build.ps1); a zip copied in from there ships too.
-if [ -f build/windows/DeskBuddy.zip ]; then cp build/windows/DeskBuddy.zip "$stage/desk-buddy/app/DeskBuddy-windows.zip"; fi
+# Each OS builds its own app; a zip copied in from the other machine ships too.
+if [ -f "$macos_zip" ]; then cp "$macos_zip" "$stage/desk-buddy/app/DeskBuddy-macos.zip"; fi
+if [ -f "$windows_zip" ]; then cp "$windows_zip" "$stage/desk-buddy/app/DeskBuddy-windows.zip"; fi
 # dist/ becomes a repository of its own, so the license goes with it and with the plugin.
 cp LICENSE "$stage/LICENSE"
 cp LICENSE "$stage/desk-buddy/LICENSE"
