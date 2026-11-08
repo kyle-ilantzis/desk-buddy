@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/dist.sh --hook",
+            "command": "make -s -C \"$CLAUDE_PROJECT_DIR\" uninstall-app >&2; \"$CLAUDE_PROJECT_DIR\"/scripts/dist.sh --hook",
             "timeout": 300
           }
         ]
