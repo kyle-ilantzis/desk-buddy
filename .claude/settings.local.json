@@ -34,7 +34,9 @@
       "Bash(cp sprites/sam.png \"/private/tmp/claude-501/-Users-kyle--claude-spares-spare-UNXXMT/7094d80d-c298-442f-b8ae-d13ebd537822/scratchpad/sam.backup.png\")",
       "Bash(jq 'del\\(.avatars.sam\\)' avatars.json)",
       "Bash(mv avatars.json.tmp avatars.json)",
-      "Bash(rm sprites/sam.png)"
+      "Bash(rm sprites/sam.png)",
+      "Bash(grep -v -E '\\\\.\\(png|jpg|svg|ico|icns\\)$')",
+      "WebFetch(domain:agents.md)"
     ]
   }
 }
