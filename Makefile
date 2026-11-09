@@ -1,5 +1,6 @@
 # make                 same as make dist
 # make dist            src/ -> dist/ (rebuilds this OS's native app first when src/native changed)
+# make dist-hook       the PostToolUse hook: read the event on stdin, run dist only if a src/ file was edited
 # make native          build the native app for this OS (macOS or Windows), then dist
 # make native-macos    build build/macos/DeskBuddy.zip (on macOS), then dist
 # make native-windows  build build/windows/DeskBuddy.zip (on Windows), then dist
@@ -15,9 +16,11 @@ else
 NATIVE := native-macos
 endif
 
-.PHONY: dist native native-macos native-windows test install-dev uninstall-app clean
+.PHONY: dist dist-hook native native-macos native-windows test install-dev uninstall-app clean
 dist:
 	scripts/dist.sh
+dist-hook:
+	scripts/dist.sh --hook
 native: $(NATIVE)
 native-macos:
 	src/native/macos/build.sh

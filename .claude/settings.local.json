@@ -36,7 +36,9 @@
       "Bash(mv avatars.json.tmp avatars.json)",
       "Bash(rm sprites/sam.png)",
       "Bash(grep -v -E '\\\\.\\(png|jpg|svg|ico|icns\\)$')",
-      "WebFetch(domain:agents.md)"
+      "WebFetch(domain:agents.md)",
+      "Bash(sips -g pixelWidth -g pixelHeight in1.png in2.png crop.png big.png preview.png)",
+      "Bash(grep -v '^$')"
     ]
   }
 }
