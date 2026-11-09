@@ -1,3 +1,37 @@
+Let's update "## 4. Choose your buddy" to instead be an allow list of buddies
+
+I want to have a default buddy that you have.
+
+Then when more work gets added, it picks a free buddy, or makes a new buddy from the allow list.
+
+The default buddy needs to remain.
+
+The other buddies can be added as more work appears.
+
+I want to enable/add buddies from the OS tray/menu bar, so I dont need to build a UI, just have a list in the tray so its simpler.
+
+In the tray/menu-bar, be
+```
+Buddies
+---
+<buddy-name> 
+   -> Add
+   -> Remove
+   -> Default
+```
+
+Where -> means a nested menu popup
+Where <buddy-name> is all the custom buddies and the bundled buddies
+
+Where Add / Remove takes effect
+
+A free buddy accepts the next work if any comes in
+If there is no free buddy, a new one from the ones on screen appear
+
+The default makes the buddy the default (there is only ever 1 default)
+
+===
+
 We need a strategy to better prepare src/mod for cross platform work.
 
 Right now it will run the native app expecting mac os.
