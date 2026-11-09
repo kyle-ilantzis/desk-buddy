@@ -73,7 +73,7 @@ The app also runs with no session at all. Its buddy then wanders and naps by its
 All data is stored in local files. There is no database.
 
 - **App data folder:** `~/Library/Application Support/DeskBuddy/` on macOS and `%LOCALAPPDATA%\DeskBuddy` on Windows. It holds `avatars.json`, and avatars made with `/desk-buddy create`. Besides the avatars, `avatars.json` holds the `default`, which the tray menu and `/desk-buddy avatar <name>` write. Buddies added from the menu aren't saved.
-- **Bundled avatars:** `kyle`, `melody`, `sam` and `onyx`. Each is a PNG sprite sheet with a JSON file that describes its 13 animation states. They are in `src/native/core/assets` and get copied into each app's resources. The sheet format is described in [AVATAR-SHEETS.md](src/mod/tool-avatar-maker/AVATAR-SHEETS.md).
+- **Bundled avatars:** `kyle`, `melody`, `sam`, `onyx` and `bear`. Each is a PNG sprite sheet with a JSON file that describes its 13 animation states. They are in `src/native/core/assets` and get copied into each app's resources. The sheet format is described in [AVATAR-SHEETS.md](src/mod/tool-avatar-maker/AVATAR-SHEETS.md).
 
 ## Build and distribution
 

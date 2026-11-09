@@ -15,7 +15,7 @@ Desk buddy runs without any Claude Code session. Open it and the buddy is on scr
 
 ## 2. Bundled avatars
 
-The app ships with four avatars, `kyle`, `melody`, `sam` and `onyx`, and the settings work from a list of them rather than one built-in sheet. The plan is in [roadmaps/02-bundled-avatars.md](roadmaps/02-bundled-avatars.md).
+The app ships with five avatars, `kyle`, `melody`, `sam`, `onyx` and `bear`, and the settings work from a list of them rather than one built-in sheet. The plan is in [roadmaps/02-bundled-avatars.md](roadmaps/02-bundled-avatars.md).
 
 ## 3. Build, distribute and install the app
 
