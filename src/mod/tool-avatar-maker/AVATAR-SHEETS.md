@@ -68,4 +68,4 @@ This shows two of the 13. List them all, each with its `row`, `frames` and `fps`
 With `DeskBuddy` being `/Applications/DeskBuddy.app/Contents/MacOS/DeskBuddy`, and a folder holding `sheet.png` and `avatar.json`:
 
 - `DeskBuddy --check-avatar <folder> <preview.png>` lists what's wrong, such as a missing state or a blank frame, and draws every state as the overlay would.
-- `DeskBuddy --install-avatar <id> <folder> [display name]` runs the same checks, copies the sheet to `~/Library/Application Support/DeskBuddy/sprites/<id>.png`, and adds it to `avatars.json`. The app's own names, `kyle`, `melody` and `builtin`, are refused.
+- `DeskBuddy --install-avatar <id> <folder> [display name]` runs the same checks, copies the sheet to `~/Library/Application Support/DeskBuddy/sprites/<id>.png`, and adds it to `avatars.json`. The app's own names, `kyle`, `melody`, `sam` and `builtin`, are refused.

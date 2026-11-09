@@ -9,7 +9,7 @@ let awakeFor: ClosedRange<TimeInterval> = 90...180 // an idle buddy wanders this
 let napFor: ClosedRange<TimeInterval> = 60...180   // then naps this long
 let wakingFor: TimeInterval = 2                    // and stands a moment before it walks off
 public let defaultAvatar = "kyle"                     // worn when nothing else is picked
-public let bundledAvatars = [defaultAvatar, "melody"] // each is <name>.png and <name>.json in the app's resources
+public let bundledAvatars = [defaultAvatar, "melody", "sam"] // each is <name>.png and <name>.json in the app's resources
 let retiredAvatar = "builtin"                         // kyle's old name, which a saved pick can still say
 public let winW: Double = 190, winH: Double = 112
 let spriteFit: Double = 64  // a sheet with no "scale" is drawn about this tall
