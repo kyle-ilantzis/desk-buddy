@@ -1,0 +1,12 @@
+{
+  "name": "desk-buddy",
+  "owner": { "name": "Kyle Ilantzis" },
+  "plugins": [
+    {
+      "name": "desk-buddy",
+      "source": "./desk-buddy",
+      "version": "0.5.0",
+      "description": "A little avatar per working Claude session that walks around your screen."
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "animations" : {
+    "asleep" : {
+      "fps" : 1,
+      "frames" : 1,
+      "row" : 11
+    },
+    "browsing" : {
+      "fps" : 16,
+      "frames" : 6,
+      "row" : 6
+    },
+    "delegating" : {
+      "fps" : 20,
+      "frames" : 6,
+      "row" : 7
+    },
+    "done" : {
+      "fps" : 10,
+      "frames" : 6,
+      "row" : 9
+    },
+    "editing" : {
+      "fps" : 16,
+      "frames" : 6,
+      "row" : 4
+    },
+    "error" : {
+      "fps" : 1,
+      "frames" : 1,
+      "row" : 10
+    },
+    "held" : {
+      "fps" : 5,
+      "frames" : 6,
+      "row" : 12
+    },
+    "idle" : {
+      "fps" : 4,
+      "frames" : 16,
+      "row" : 0
+    },
+    "reading" : {
+      "fps" : 12,
+      "frames" : 6,
+      "row" : 3
+    },
+    "running" : {
+      "fps" : 20,
+      "frames" : 6,
+      "row" : 5
+    },
+    "thinking" : {
+      "fps" : 8,
+      "frames" : 6,
+      "row" : 2
+    },
+    "waiting" : {
+      "fps" : 10,
+      "frames" : 6,
+      "row" : 8
+    },
+    "walk" : {
+      "fps" : 4,
+      "frames" : 6,
+      "row" : 1
+    }
+  },
+  "frameHeight" : 48,
+  "frameWidth" : 64,
+  "scale" : 2,
+  "sheet" : "melody.png"
+}
