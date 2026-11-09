@@ -2,6 +2,8 @@
 
 A little avatar for each Claude Code session that walks around your Mac's screen and acts out what the session is doing. It is two parts: a Claude Code mod in `src/mod/`, and a native macOS overlay app in `src/native/`.
 
+[![Desk Buddy promo](docs/promo.gif)](docs/promo.mp4)
+
 See [ROADMAP.md](ROADMAP.md) for where it is going.
 
 ## Install
