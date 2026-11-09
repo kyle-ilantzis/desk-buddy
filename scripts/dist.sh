@@ -67,6 +67,18 @@ if [ -f "$windows_zip" ]; then cp "$windows_zip" "$stage/desk-buddy/app/DeskBudd
 # dist/ becomes a repository of its own, so the license goes with it and with the plugin.
 cp LICENSE "$stage/LICENSE"
 cp LICENSE "$stage/desk-buddy/LICENSE"
+cat > "$stage/README.md" <<'MD'
+# Desk Buddy marketplace
+
+Built from [kyle-ilantzis/desk-buddy](https://github.com/kyle-ilantzis/desk-buddy) by `make publish`. Don't edit this branch by hand.
+
+Install in Claude Code:
+
+```
+/plugin marketplace add https://github.com/kyle-ilantzis/desk-buddy.git#dist
+/plugin install desk-buddy@desk-buddy
+```
+MD
 cat > "$stage/.claude-plugin/marketplace.json" <<JSON
 {
   "name": "desk-buddy",

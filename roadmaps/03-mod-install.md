@@ -55,7 +55,7 @@ dist/                    what ships, ignored by git
 
 ## Release
 
-- [ ] Publish `dist/` to a GitHub repository of its own (or an orphan `dist` branch of this one), so that people install with `/plugin install desk-buddy --marketplace <owner>/<repo>`. The `marketplace.json` that `make dist` writes works there unchanged.
+- [x] Publish `dist/` to an orphan `dist` branch of this repository with `make publish`, so that people add `https://github.com/kyle-ilantzis/desk-buddy.git#dist` as a marketplace. The `marketplace.json` that `make dist` writes works there unchanged.
 - [ ] Bump `src/mod/VERSION` for every release. An installed plugin from GitHub only updates when its version changes.
 - [ ] Build `dist/` in CI on a tag, on macOS, and later on Windows as well, and push it to the release repository.
 - [ ] Sign and notarize the macOS app before it is called a release. Until then, the first open needs Open Anyway.
@@ -64,4 +64,4 @@ dist/                    what ships, ignored by git
 
 - [ ] Test the first open on a clean account. A file a browser downloads is quarantined, but one unpacked by the mod may not be, which would remove the Open Anyway step until the release is notarized. This is unproven, and it decides what the README has to say.
 - [ ] Cover install, update, skip and failure in `src/mod/hooks/register.test.ts`. Done except a hung app that ignores the quit during an update: the test machine's `clock.sleep` never resolves.
-- [ ] Remove the manual steps from "Install" in `README.md`, keeping `build.sh --install` for development, and add the `/plugin install` line once the release repository exists.
+- [x] Remove the manual steps from "Install" in `README.md`, keeping `build.sh --install` for development, and add the `/plugin install` line once the release repository exists.

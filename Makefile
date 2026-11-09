@@ -5,6 +5,7 @@
 # make native-macos    build build/macos/DeskBuddy.zip (on macOS), then dist
 # make native-windows  build build/windows/DeskBuddy.zip (on Windows), then dist
 # make test            run the mod's tests
+# make publish        build dist/ and push it to the dist branch on origin (the marketplace)
 # make install-dev     register dist/ as a local marketplace and install the plugin from it
 # make uninstall-app   remove the installed native app so the mod reinstalls it (macOS; Windows todo)
 # make clean           remove build/ and dist/
@@ -16,7 +17,7 @@ else
 NATIVE := native-macos
 endif
 
-.PHONY: dist dist-hook native native-macos native-windows test install-dev uninstall-app clean
+.PHONY: dist dist-hook native native-macos native-windows test publish install-dev uninstall-app clean
 dist:
 	scripts/dist.sh
 dist-hook:
@@ -30,6 +31,8 @@ native-windows:
 	scripts/dist.sh
 test:
 	$(CLAUDE) plugin test src/mod
+publish:
+	scripts/publish.sh
 install-dev: dist
 	$(CLAUDE) plugin marketplace add "$(CURDIR)/dist"
 	$(CLAUDE) plugin install desk-buddy@desk-buddy

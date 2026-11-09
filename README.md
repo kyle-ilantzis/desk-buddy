@@ -6,11 +6,14 @@ See [ROADMAP.md](ROADMAP.md) for where it is going.
 
 ## Install
 
-There is no release repository yet, so install from a clone:
+In Claude Code:
 
-```bash
-make install-dev
 ```
+/plugin marketplace add https://github.com/kyle-ilantzis/desk-buddy.git#dist
+/plugin install desk-buddy@desk-buddy
+```
+
+To work on it, install from a clone instead with `make install-dev`.
 
 The first session installs the app from the mod into `/Applications`, or `~/Applications` when that can't be written to, and opens it. It isn't notarized, so if macOS blocks the first open, use System Settings > Privacy & Security > Open Anyway.
 
@@ -34,4 +37,4 @@ dist/.claude-plugin/marketplace.json
 dist/desk-buddy/                        src/mod, plus app/DeskBuddy-macos.zip
 ```
 
-The version comes from `src/mod/VERSION`, stamped into the app and `plugin.json` at build time. The native app is rebuilt only when `src/native/` or `src/mod/VERSION` changed. The plan for publishing `dist/` is in [roadmaps/03-mod-install.md](roadmaps/03-mod-install.md).
+The version comes from `src/mod/VERSION`, stamped into the app and `plugin.json` at build time. The native app is rebuilt only when `src/native/` or `src/mod/VERSION` changed. `make publish` builds `dist/` and pushes it to the `dist` branch, which is the marketplace people add. It needs a clean working tree, and warns if `src/mod/VERSION` wasn't bumped, since installed plugins only update when the version changes.
