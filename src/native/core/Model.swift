@@ -8,9 +8,9 @@ let idleGrace: TimeInterval = 60       // a session keeps its buddy this long af
 let awakeFor: ClosedRange<TimeInterval> = 90...180 // an idle buddy wanders this long
 let napFor: ClosedRange<TimeInterval> = 60...180   // then naps this long
 let wakingFor: TimeInterval = 2                    // and stands a moment before it walks off
-public let defaultAvatar = "kyle"                     // worn when nothing else is picked
+public let defaultAvatar = "kyle"                     // the default buddy when none is saved
 public let bundledAvatars = [defaultAvatar, "melody", "sam", "onyx"] // each is <name>.png and <name>.json in the app's resources
-let retiredAvatar = "builtin"                         // kyle's old name, which a saved pick can still say
+let retiredAvatar = "builtin"                         // kyle's old name, which a saved default can still say
 public let winW: Double = 190, winH: Double = 112
 let spriteFit: Double = 64  // a sheet with no "scale" is drawn about this tall
 let spriteMax: Double = 256 // and no sheet is drawn larger than this
@@ -24,7 +24,6 @@ public struct Report: Decodable {
     public let project: String
     public let mood: String
     public let tool: String?
-    public let avatar: String?
     public let updatedAt: Double
     public let idleSince: Double? // when its last turn ended; nil if none ran or one is running
 

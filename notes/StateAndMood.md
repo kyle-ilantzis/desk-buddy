@@ -78,7 +78,7 @@ Drawn in code on top of the sprite in `BuddyView.draw()` (line 270). It doesn't 
 
 ## Changing the sheet itself
 
-`Buddy.dress()` (line 358) swaps the whole sprite when the session's avatar pick changes, for example when the buddy takes a new session. `poll()` calls it every second. `AvatarLibrary.sprite()` resolves the pick, or else the `default` in `avatars.json`, looking the name up in `avatars.json` and then among the bundled sheets, and falls back to `kyle`. A resting buddy clears its pick, so it goes back to the default avatar, and `dress()` puts that avatar's name on its tag.
+`Buddy.dress()` swaps the whole sprite when the buddy's avatar's sheet changes, for example when `avatars.json` is edited. Each buddy wears one avatar for as long as it is out (`Buddy.avatar`): the default, or the one it was added as from the menu. `AvatarLibrary.sprite()` looks the name up in `avatars.json` and then among the bundled sheets, and falls back to `kyle`. A resting buddy shows its avatar's name on its tag.
 
 ## Adding a new state
 

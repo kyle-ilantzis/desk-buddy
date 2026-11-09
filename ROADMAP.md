@@ -25,7 +25,7 @@ The source lives in `src/` (`src/mod`, and `src/native/{core,macos,windows}`), b
 
 ## 4. Choose your buddy
 
-Keep an allow list of buddies in the menu bar or tray menu, with no picker window. One buddy is the default and is always out. When more work comes in, a free buddy takes it, or another buddy from the allow list comes out. The plan is in [roadmaps/04-choose-buddy.md](roadmaps/04-choose-buddy.md).
+Choose buddies in the menu bar or tray menu, with no picker window. The app opens with only the default buddy, and buddies added from the menu come out straight away to wait for work, one or more copies of each. When more work comes in than there are buddies, a temporary copy of the default comes out. The plan is in [roadmaps/04-choose-buddy.md](roadmaps/04-choose-buddy.md).
 
 ## 5. Windows support
 
@@ -70,10 +70,10 @@ Let the person make the buddy bigger. Its size is fixed today: a sheet is drawn 
 ## Suggested order
 
 1. **Standalone**, since it is small and stands alone.
-2. **Bundled avatars**, since they need no new UI and give the allow list something to list.
+2. **Bundled avatars**, since they need no new UI and give the buddies menu something to list.
 3. **Build, distribute and install**, since until then everyone with the mod has a manual step.
 4. **The core and platform split**, before any new UI, so that the buddies menu is not written in AppKit and then rewritten.
-5. **The buddy allow list**, on the new structure.
+5. **The buddies menu**, on the new structure.
 6. **Bigger buddies**, as a setting beside the buddies menu, so that it is also built on the new structure.
 7. **The Windows platform layer**, then the mod changes and the installer.
 

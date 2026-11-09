@@ -7,6 +7,7 @@
 set -eu
 [ "$(uname)" = Darwin ] || { echo "DeskBuddy builds on macOS only" >&2; exit 1; }
 command -v swift >/dev/null || { echo "swift not found: run xcode-select --install" >&2; exit 1; }
+install="${1:-}" # read now: the build loop below reuses the arguments
 
 here="$(cd "$(dirname "$0")" && pwd)"
 native="$(cd "$here/.." && pwd)"
@@ -34,7 +35,7 @@ codesign --force --sign - "$app"
 ditto -c -k --keepParent "$app" "$out/DeskBuddy.zip"
 echo "Built $out/DeskBuddy.zip ($version)"
 
-if [ "${1:-}" = --install ]; then
+if [ "$install" = --install ]; then
   socket="$HOME/Library/Application Support/DeskBuddy/buddy.sock"
   curl -s -m 3 --unix-socket "$socket" -X POST http://desk-buddy/quit >/dev/null || true
   tries=0

@@ -21,8 +21,8 @@ const EXIT_POLL_MS = 250 // how often an update checks that the app it quit is g
 const EXIT_TRIES = 20 // after this many checks, the app is killed
 const STATUS_WAIT_MS = 1_000
 const APP_CLOSED = 'The app is not running. Run `/desk-buddy start`, then try again.'
-const FALLBACK = 'kyle' // the avatar worn when nothing else is picked
-const RETIRED = 'builtin' // kyle's old name: a saved pick can still say it, and the app dresses it as kyle
+const FALLBACK = 'kyle' // the default buddy when none is saved
+const RETIRED = 'builtin' // kyle's old name: a saved default can still say it, and the app reads it as kyle
 const MAX_NAME = 32
 const MAKER = 'avatar-maker'
 const MAKER_DIR = 'tool-avatar-maker' // its prompt, spec and example sheets, under the plugin root
@@ -32,13 +32,10 @@ const HELP = [
   'Desk buddy commands:',
   '- `/desk-buddy start`: bring the desk buddies out',
   '- `/desk-buddy stop`: send them home',
-  '- `/desk-buddy avatar`: list the avatars',
-  '- `/desk-buddy avatar <name>`: pick this session\'s avatar, and the default for new sessions',
+  '- `/desk-buddy avatar`: list the avatars, and say which is the default',
+  '- `/desk-buddy avatar <name>`: make this buddy the default, which is always out. Add more buddies from the menu bar menu',
   '- `/desk-buddy create <name> <image> [image...]`: make a new avatar from pictures, in the background',
 ].join('\n')
-
-// Session state, so a pick lasts through a /clear and a reload of this mod.
-const avatarPick = { plugin: 'desk-buddy', key: 'avatar' } as const
 
 const moodOf = (tool: string): Mood => {
   if (/^(Read|Grep|Glob|LS|NotebookRead)$/.test(tool)) return 'reading'
@@ -76,13 +73,12 @@ async function report($: Engine, next: Mood, nextTool?: string, id?: string) {
   try {
     const sessionId = id ?? (await $.session.id())
     const socketPath = await socketPathOf($)
-    const { value: avatar } = await $.state.get(avatarPick)
     // The app can move a session after it starts, from a spare folder to the real one.
     const project = (await $.session.root()).split('/').filter(Boolean).pop() ?? 'claude'
     const updatedAt = await $.clock.now()
     // Starting from the clock keeps it rising through a reload, which resets `seq`.
     seq = Math.max(seq + 1, updatedAt)
-    const body = { v: PROTOCOL, seq, id: sessionId, project, mood, tool, avatar: avatar ?? undefined, idleSince, updatedAt }
+    const body = { v: PROTOCOL, seq, id: sessionId, project, mood, tool, idleSince, updatedAt }
     // Not awaited: this runs inside tool.call, and a fetch has no timeout, so a
     // hung app would stall tools. The app drops any that arrive out of order by `seq`.
     lastSent = $.http.fetch('http://desk-buddy/report', {
@@ -277,6 +273,14 @@ async function configuredAvatars($: Engine, dataFolder: string): Promise<Map<str
   return new Map(Object.keys(avatars).sort().map(id => [id, avatars[id]!.name]))
 }
 
+// The default buddy saved in avatars.json, as the app reads it.
+async function configuredDefault($: Engine, dataFolder: string): Promise<string> {
+  const path = `${dataFolder}/avatars.json`
+  if (!(await $.fs.exists(path))) return FALLBACK
+  const saved = (JSON.parse(String(await $.fs.read(path))) as { default?: string }).default
+  return saved === undefined || saved === RETIRED ? FALLBACK : saved
+}
+
 // Only the app knows which sheets it carries. One from before the list carries kyle's, as `builtin`.
 const bundledAvatars = (found: Place) => found.bundled ?? [FALLBACK]
 
@@ -396,13 +400,12 @@ async function makerEnded($: Engine, agentId: string) {
   const names = found === undefined ? new Map<string, string | undefined>() : await configuredAvatars($, found.dataFolder).catch(() => new Map<string, string | undefined>())
   const shown = names.get(id) ?? id
   await $.ui.notify(
-    names.has(id) ? `Run /desk-buddy avatar ${id} to wear it.` : `It didn't finish. Its work is in ${found?.dataFolder ?? 'the app\'s data folder'}/jobs/${id}/.`,
+    names.has(id) ? `Add it from the menu bar, or make it the default with /desk-buddy avatar ${id}.` : `It didn't finish. Its work is in ${found?.dataFolder ?? 'the app\'s data folder'}/jobs/${id}/.`,
     { title: names.has(id) ? `Your avatar ${shown} is ready` : `Avatar ${shown} failed` },
   )
 }
 
-// The latest pick becomes the config's default, which outlasts the overlay and
-// every session. The overlay reads this file at any moment, so it is moved into
+// The pick becomes the config's default, which the app always keeps out. The overlay reads this file at any moment, so it is moved into
 // place whole. With no file yet, this makes one: `avatars` is the one key the app needs.
 async function rememberDefault($: Engine, dataFolder: string, name: string) {
   const path = `${dataFolder}/avatars.json`
@@ -427,19 +430,17 @@ async function pickAvatar($: Engine, wanted: string): Promise<string> {
   const ids = [...names.keys(), ...bundled.filter(id => !names.has(id))]
   const choices = ids.map(id => (names.get(id) ?? id) === id ? id : `${names.get(id)} (${id})`).join(', ')
   if (wanted === '') {
-    const { value: current } = await $.state.get(avatarPick)
-    return `This session: ${current === RETIRED ? FALLBACK : current ?? 'the default'}. Available: ${choices}.`
+    const current = await configuredDefault($, found.dataFolder).catch(() => FALLBACK)
+    return `Default: ${current}. Available: ${choices}. Add more buddies from the menu bar menu.`
   }
   const id = wanted === RETIRED ? FALLBACK : wanted
   if (!ids.includes(id)) return `No avatar named "${wanted}". Available: ${choices}.`
-  await $.state.set(avatarPick, id)
-  await report($, mood, tool)
   try {
     await rememberDefault($, found.dataFolder, id)
   } catch (error) {
-    return `This session's buddy is now ${id}, but it could not be saved as the default: ${String(error).slice(0, 200)}`
+    return `${id} could not be saved as the default: ${String(error).slice(0, 200)}`
   }
-  return `This session's buddy is now ${id}, and new sessions will start with it.`
+  return `The default buddy is now ${id}. It is always out.`
 }
 
 export const register: Register = on => {
@@ -447,7 +448,7 @@ export const register: Register = on => {
     const started = await next(e)
     await $.command.register({
       name: 'desk-buddy',
-      description: 'List the desk buddy commands, bring the buddies out with "start", send them home with "stop", pick this session\'s sprite with "avatar <name>", or make a new one from pictures with "create <name> <image...>".',
+      description: 'List the desk buddy commands, bring the buddies out with "start", send them home with "stop", set the default buddy with "avatar <name>", or make a new one from pictures with "create <name> <image...>".',
       argumentHint: '[start | stop | avatar [name] | create <name> <image...>]',
     })
     await $.agent.register({

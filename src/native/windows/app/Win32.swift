@@ -53,6 +53,10 @@ let smSwapButton: Int32 = 23
 let nimAdd: DWORD = 0, nimModify: DWORD = 1, nimDelete: DWORD = 2
 let nifMessage: UINT = 0x1, nifIcon: UINT = 0x2, nifTip: UINT = 0x4
 let mfString: UINT = 0
+let mfGrayed: UINT = 0x0001
+let mfChecked: UINT = 0x0008
+let mfPopup: UINT = 0x0010
+let mfSeparator: UINT = 0x0800
 let tpmRightButton: UINT = 0x0002
 let wmCommand: UINT = 0x0111
 

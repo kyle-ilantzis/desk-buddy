@@ -25,8 +25,12 @@ final class FakeDesktop: Desktop {
 }
 
 final class FakeTray: Tray {
-    var count = -1
-    func show(buddies: Int) { count = buddies }
+    weak var delegate: TrayDelegate?
+    var menu: TrayMenu?
+    var shows = 0
+    var count: Int { menu?.buddiesOut ?? -1 }
+    func show(_ menu: TrayMenu) { self.menu = menu; shows += 1 }
+    func row(_ id: String) -> MenuRow? { menu?.rows.first { $0.id == id } }
 }
 
 /// Answers every image with an opaque block of `size`, or reads a PNG's size from its header.
@@ -92,13 +96,19 @@ final class StageTests: XCTestCase {
     let tray = FakeTray()
     var quit = false
 
-    func makeStage() -> Stage {
-        Stage(Platform(paths: tempPaths(), images: FakeImages(), desktop: FakeDesktop(), tray: tray,
+    func makeStage(_ paths: Paths = tempPaths(), avatars: String? = nil) -> Stage {
+        if let avatars {
+            try! FileManager.default.createDirectory(at: paths.dataDir, withIntermediateDirectories: true)
+            try! Data(avatars.utf8).write(to: paths.avatarsFile)
+        }
+        return Stage(Platform(paths: paths, images: FakeImages(), desktop: FakeDesktop(), tray: tray,
                        makeWindow: { let w = FakeWindow(); self.windows.append(w); return w },
                        quit: { self.quit = true }, info: { ["version": "test"] }))
     }
 
     var open: Int { windows.filter { !$0.closed }.count }
+    func wearing(_ stage: Stage) -> [String] { stage.buddies.map(\.avatar).sorted() }
+    func work(_ stage: Stage, _ ids: String...) { ids.forEach { _ = stage.answer("POST /report", report($0, "thinking")) } }
 
     func testOneBuddyRestsWithNoSessions() {
         let stage = makeStage()
@@ -116,8 +126,11 @@ final class StageTests: XCTestCase {
         _ = stage.answer("POST /report", report("b", "editing"))
         XCTAssertEqual(open, 2)
         _ = stage.answer("POST /report", report("a", "ended", seq: 2))
+        XCTAssertEqual(open, 2, "the default stays out, resting")
+        XCTAssertEqual(stage.buddies.first { $0.role == .temporary }?.session, "b")
+        XCTAssertNil(stage.buddies.first { $0.role == .main }?.session)
+        _ = stage.answer("POST /report", report("b", "ended", seq: 2))
         XCTAssertEqual(open, 1)
-        XCTAssertEqual(stage.buddies.first?.session, "b")
     }
 
     func testAnOldReportCannotUndoANewerOne() {
@@ -140,6 +153,116 @@ final class StageTests: XCTestCase {
         XCTAssertTrue(quit)
         XCTAssertEqual(stage.answer("GET /nope", Data()).status, 404)
         XCTAssertEqual(stage.answer("POST /report", Data("{}".utf8)).status, 400)
+    }
+
+    func testOnlyTheDefaultIsOutAtLaunch() {
+        let stage = makeStage(avatars: #"{"avatars":{},"buddies":["kyle","melody"]}"#)
+        stage.start()
+        XCTAssertEqual(wearing(stage), ["kyle"], "an old saved list brings nobody else out")
+        XCTAssertEqual(tray.menu?.rows.map(\.id), bundledAvatars)
+        XCTAssertEqual(tray.row("kyle")?.title, "kyle (default)")
+        XCTAssertEqual(tray.row("kyle")?.checked, true)
+        XCTAssertEqual(tray.row("kyle")?.canRemove, false, "the default itself always stays")
+        XCTAssertEqual(tray.row("melody")?.checked, false)
+    }
+
+    func testAddBringsOutCopiesAtOnceAndRemoveTakesTheOldest() {
+        let stage = makeStage()
+        stage.start()
+        tray.delegate?.choose(.add("melody"))
+        let first = stage.buddies.last!
+        tray.delegate?.choose(.add("melody"))
+        XCTAssertEqual(wearing(stage), ["kyle", "melody", "melody"], "added buddies come out straight away")
+        XCTAssertTrue(stage.buddies.allSatisfy { $0.session == nil }, "and rest until work comes in")
+        XCTAssertEqual(tray.row("melody")?.title, "melody ×2")
+        XCTAssertEqual(tray.row("melody")?.checked, true)
+        stage.housekeeping()
+        XCTAssertEqual(wearing(stage), ["kyle", "melody", "melody"], "they don't go home when idle")
+        tray.delegate?.choose(.remove("melody"))
+        XCTAssertFalse(stage.buddies.contains { $0 === first }, "the oldest copy goes")
+        XCTAssertEqual(wearing(stage), ["kyle", "melody"])
+    }
+
+    func testRemoveOnTheDefaultTakesOnlyAddedCopies() {
+        let stage = makeStage()
+        stage.start()
+        tray.delegate?.choose(.add("kyle"))
+        XCTAssertEqual(tray.row("kyle")?.title, "kyle ×2 (default)")
+        XCTAssertEqual(tray.row("kyle")?.canRemove, true)
+        let main = stage.buddies.first!
+        tray.delegate?.choose(.remove("kyle"))
+        tray.delegate?.choose(.remove("kyle"))
+        XCTAssertEqual(stage.buddies.map { $0 === main }, [true], "the default itself stays")
+        XCTAssertEqual(tray.row("kyle")?.canRemove, false)
+    }
+
+    func testARemovedWorkingBuddyGoesHomeAndItsWorkMoves() {
+        let stage = makeStage()
+        stage.start()
+        tray.delegate?.choose(.add("melody"))
+        work(stage, "a", "b")
+        let melody = stage.buddies.first { $0.avatar == "melody" }!
+        let session = melody.session!
+        tray.delegate?.choose(.remove("melody"))
+        XCTAssertFalse(stage.buddies.contains { $0 === melody })
+        XCTAssertEqual(stage.buddies.filter { $0.session == session }.map(\.avatar), ["kyle"],
+                       "its session goes to a temporary copy of the default")
+    }
+
+    func testExtraWorkBringsOutTemporaryCopiesOfTheDefault() {
+        let stage = makeStage()
+        stage.start()
+        tray.delegate?.choose(.add("sam"))
+        work(stage, "a", "b", "c")
+        XCTAssertEqual(wearing(stage), ["kyle", "kyle", "sam"])
+        XCTAssertEqual(tray.row("kyle")?.title, "kyle (default)", "temporary copies aren't counted in the menu")
+        for id in ["a", "b", "c"] { _ = stage.answer("POST /report", report(id, "ended", seq: 2)) }
+        XCTAssertEqual(wearing(stage), ["kyle", "sam"], "the temporary copy goes home; the rest stay")
+    }
+
+    func testANewDefaultTakesOverAndIsSaved() {
+        let paths = tempPaths()
+        let stage = makeStage(paths, avatars: #"{"avatars":{},"other":1}"#)
+        stage.start()
+        tray.delegate?.choose(.makeDefault("onyx"))
+        XCTAssertEqual(wearing(stage), ["onyx"], "the resting old default goes home")
+        XCTAssertEqual(tray.row("onyx")?.isDefault, true)
+
+        tray.delegate?.choose(.add("melody"))
+        let copy = stage.buddies.last!
+        let opened = windows.count
+        tray.delegate?.choose(.makeDefault("melody"))
+        XCTAssertEqual(windows.count, opened, "an added copy of the new default takes over")
+        XCTAssertEqual(copy.role, .main)
+        XCTAssertEqual(wearing(stage), ["melody"])
+
+        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: paths.avatarsFile)) as! [String: Any]
+        XCTAssertEqual(saved["default"] as? String, "melody")
+        XCTAssertEqual(saved["other"] as? Int, 1, "other keys survive")
+        tray.delegate?.choose(.add("sam"))
+        let again = makeStage(paths)
+        again.start()
+        XCTAssertEqual(wearing(again), ["melody"], "added buddies last for one launch")
+    }
+
+    func testAnOldDefaultAtWorkFinishesFirst() {
+        let stage = makeStage()
+        stage.start()
+        work(stage, "a")
+        tray.delegate?.choose(.makeDefault("sam"))
+        XCTAssertEqual(wearing(stage), ["kyle", "sam"])
+        XCTAssertEqual(stage.buddies.first { $0.avatar == "kyle" }?.session, "a")
+        _ = stage.answer("POST /report", report("a", "ended", seq: 2))
+        XCTAssertEqual(wearing(stage), ["sam"])
+    }
+
+    func testTheMenuIsSentOnlyWhenItChanges() {
+        let stage = makeStage()
+        stage.start()
+        let shows = tray.shows
+        stage.housekeeping()
+        stage.housekeeping()
+        XCTAssertEqual(tray.shows, shows)
     }
 
     func testABuddyTakesClicksOnlyOverItsBody() {
@@ -187,6 +310,14 @@ final class SpriteTests: XCTestCase {
         XCTAssertEqual(walk.row, 1)
         XCTAssertEqual(sprite.frame(walk, tick: 3), PixelRect(x: 16, y: 16, width: 16, height: 16))
         XCTAssertEqual(sprite.animation(mood: "error", moving: false, asleep: false, held: false).row, 0, "a missing mood plays idle")
+    }
+
+    func testTheSavedDefaultIsKnownOrKyle() {
+        let known = { (id: String) in ["kyle", "fox"].contains(id) }
+        XCTAssertEqual(chosenDefault(saved: "fox", known: known), "fox")
+        XCTAssertEqual(chosenDefault(saved: "builtin", known: known), "kyle", "builtin is kyle")
+        XCTAssertEqual(chosenDefault(saved: "ghost", known: known), "kyle")
+        XCTAssertEqual(chosenDefault(saved: nil, known: known), "kyle")
     }
 
     func testRejectsAFrameBiggerThanTheSheet() {

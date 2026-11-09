@@ -61,9 +61,42 @@ public protocol OverlayWindow: AnyObject {
     func close()
 }
 
-/// The menu bar or notification area item.
+/// One buddy in the tray menu, with what its Add, Remove and Default items may do.
+public struct MenuRow: Equatable {
+    public let id: String
+    public let title: String     // as shown: its name, "×2" for two out, and "(default)"
+    public let checked: Bool     // at least one is out
+    public let isDefault: Bool
+    public let canAdd: Bool
+    public let canRemove: Bool   // only an added copy: the default itself always stays
+    public let canMakeDefault: Bool
+}
+
+/// The whole tray menu: a "Buddies" heading, a row per buddy, then "Send buddies home".
+public struct TrayMenu: Equatable {
+    public let buddiesOut: Int
+    public let rows: [MenuRow]
+}
+
+/// What the person picked from the tray menu.
+public enum TrayChoice: Equatable {
+    case add(String)
+    case remove(String)
+    case makeDefault(String)
+    case sendHome
+}
+
+/// What a tray tells the core about its menu.
+public protocol TrayDelegate: AnyObject {
+    func choose(_ choice: TrayChoice)
+}
+
+/// The menu bar or notification area item. It paints the menu the core gives it,
+/// and passes each pick back. It decides nothing itself.
 public protocol Tray: AnyObject {
-    func show(buddies: Int)
+    /// Held weakly.
+    var delegate: TrayDelegate? { get set }
+    func show(_ menu: TrayMenu)
 }
 
 /// Everything an OS layer hands the core's `Stage`.

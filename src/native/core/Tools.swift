@@ -57,12 +57,8 @@ func installAvatar(_ name: String, from folder: URL, displayName: String?, _ pat
     if !problems.isEmpty { fail(problems) }
 
     let avatarsFile = paths.avatarsFile
-    var config: [String: Any] = [:]
-    if let data = try? Data(contentsOf: avatarsFile) {
-        guard let read = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            fail(["\(avatarsFile.path) is not valid JSON: fix it, then install again"])
-        }
-        config = read
+    guard var config = try? readAvatarsConfig(avatarsFile) else {
+        fail(["\(avatarsFile.path) is not valid JSON: fix it, then install again"])
     }
     var avatars = config["avatars"] as? [String: Any] ?? [:]
     if avatars[name] != nil { fail(["an avatar named \(name) is already configured"]) }
@@ -79,12 +75,11 @@ func installAvatar(_ name: String, from folder: URL, displayName: String?, _ pat
         if let displayName { entry["name"] = displayName }
         avatars[name] = entry
         config["avatars"] = avatars
-        let json = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try json.write(to: avatarsFile, options: .atomic)
+        try saveAvatarsConfig(config, to: avatarsFile)
     } catch {
         fail(["could not install: \(error.localizedDescription)"])
     }
-    print("Installed \(name). Pick it with /desk-buddy avatar \(name).")
+    print("Installed \(name). Add it from the menu bar, or make it the default with /desk-buddy avatar \(name).")
 }
 
 /// Makes the data folder, private to this user, and brings over what lived in the old

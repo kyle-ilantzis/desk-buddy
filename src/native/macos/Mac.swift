@@ -32,17 +32,55 @@ struct MacDesktop: Desktop {
     var primaryButtonDown: Bool { NSEvent.pressedMouseButtons & 1 != 0 }
 }
 
-final class MenuBarItem: Tray {
+// The menu bar item. It paints the core's menu and hands each pick back to it.
+final class MenuBarItem: NSObject, Tray {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    weak var delegate: TrayDelegate?
+    var choices: [TrayChoice] = [] // each menu item's tag is its place in here
 
-    init() {
-        item.button?.title = "🐾"
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Send buddies home", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        item.menu = menu
+    override init() {
+        super.init()
+        item.button?.title = "🐾" // the core sends the menu once the stage starts
     }
 
-    func show(buddies: Int) { item.button?.title = buddies == 0 ? "🐾" : "🐾 \(buddies)" }
+    func show(_ menu: TrayMenu) {
+        item.button?.title = menu.buddiesOut == 0 ? "🐾" : "🐾 \(menu.buddiesOut)"
+        choices = []
+        let built = NSMenu()
+        built.autoenablesItems = false
+        let heading = NSMenuItem(title: "Buddies", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        built.addItem(heading)
+        built.addItem(.separator())
+        for row in menu.rows {
+            let buddy = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+            buddy.state = row.checked ? .on : .off
+            let actions = NSMenu()
+            actions.autoenablesItems = false
+            actions.addItem(entry("Add", .add(row.id), enabled: row.canAdd))
+            actions.addItem(entry("Remove", .remove(row.id), enabled: row.canRemove))
+            actions.addItem(entry("Default", .makeDefault(row.id), enabled: row.canMakeDefault))
+            buddy.submenu = actions
+            built.addItem(buddy)
+        }
+        built.addItem(.separator())
+        built.addItem(entry("Send buddies home", .sendHome, enabled: true, key: "q"))
+        item.menu = built
+    }
+
+    func entry(_ title: String, _ choice: TrayChoice, enabled: Bool, key: String = "") -> NSMenuItem {
+        let entry = NSMenuItem(title: title, action: #selector(picked(_:)), keyEquivalent: key)
+        entry.target = self
+        entry.tag = choices.count
+        entry.isEnabled = enabled
+        choices.append(choice)
+        return entry
+    }
+
+    @objc func picked(_ sender: NSMenuItem) {
+        guard choices.indices.contains(sender.tag) else { return }
+        delegate?.choose(choices[sender.tag])
+    }
 }
 
 // Does anything answer on this socket? A file nothing answers on is left by a crash.

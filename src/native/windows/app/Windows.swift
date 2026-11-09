@@ -108,6 +108,7 @@ let trayMessage = wmApp + 1
 let requestMessage = wmApp + 2
 let thenMessage = wmApp + 3
 let quitCommand: WORD = 1
+let buddyCommands = 100 // then three ids a buddy row: Add, Remove, Default
 var onMessage: (UINT, WPARAM, LPARAM) -> LRESULT? = { _, _, _ in nil }
 
 let messageProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -131,6 +132,8 @@ func makeMessageWindow() -> HWND? {
 final class NotificationIcon: Tray {
     let hwnd: HWND?
     var data = NOTIFYICONDATAW()
+    weak var delegate: TrayDelegate?
+    var shown: TrayMenu?
 
     init(_ hwnd: HWND?) {
         self.hwnd = hwnd
@@ -152,20 +155,45 @@ final class NotificationIcon: Tray {
         }
     }
 
-    func show(buddies: Int) {
-        setTip(buddies == 1 ? "DeskBuddy: 1 buddy" : "DeskBuddy: \(buddies) buddies")
+    /// Keeps the core's menu for the next right click, and the count for the tip.
+    func show(_ menu: TrayMenu) {
+        shown = menu
+        let n = menu.buddiesOut
+        setTip(n == 1 ? "DeskBuddy: 1 buddy" : "DeskBuddy: \(n) buddies")
         Shell_NotifyIconW(nimModify, &data)
     }
 
-    /// The menu, on a right click. Choosing from it sends WM_COMMAND to `hwnd` with `quitCommand`.
+    /// The menu, on a right click. Choosing from it sends WM_COMMAND to `hwnd` with
+    /// `quitCommand`, or a buddy's command id, which `choice(for:)` reads back.
     func menu() {
         guard let menu = CreatePopupMenu() else { return }
-        defer { DestroyMenu(menu) }
+        defer { DestroyMenu(menu) } // takes its submenus with it
+        withWide("Buddies") { _ = AppendMenuW(menu, mfString | mfGrayed, 0, $0) }
+        AppendMenuW(menu, mfSeparator, 0, nil)
+        for (i, row) in (shown?.rows ?? []).enumerated() {
+            guard let actions = CreatePopupMenu() else { continue }
+            let items = [("Add", row.canAdd), ("Remove", row.canRemove), ("Default", row.canMakeDefault)]
+            for (j, (title, enabled)) in items.enumerated() {
+                withWide(title) { _ = AppendMenuW(actions, mfString | (enabled ? 0 : mfGrayed), UINT_PTR(buddyCommands + i * 3 + j), $0) }
+            }
+            let flags = mfString | mfPopup | (row.checked ? mfChecked : 0)
+            withWide(row.title) { _ = AppendMenuW(menu, flags, UINT_PTR(UInt(bitPattern: Int(bitPattern: actions))), $0) }
+        }
+        AppendMenuW(menu, mfSeparator, 0, nil)
         withWide("Send buddies home") { _ = AppendMenuW(menu, mfString, UINT_PTR(quitCommand), $0) }
         var p = POINT()
         GetCursorPos(&p)
         SetForegroundWindow(hwnd)
         TrackPopupMenu(menu, tpmRightButton, p.x, p.y, 0, hwnd, nil)
+    }
+
+    /// What a WM_COMMAND id from the menu picks.
+    func choice(for command: Int) -> TrayChoice? {
+        if command == Int(quitCommand) { return .sendHome }
+        let i = command - buddyCommands
+        guard i >= 0, let rows = shown?.rows, rows.indices.contains(i / 3) else { return nil }
+        let id = rows[i / 3].id
+        return [TrayChoice.add(id), .remove(id), .makeDefault(id)][i % 3]
     }
 
     func remove() { Shell_NotifyIconW(nimDelete, &data) }

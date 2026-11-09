@@ -51,8 +51,10 @@ onMessage = { message, wParam, lParam in
         let event = UINT(truncatingIfNeeded: lParam)
         if event == wmRButtonUp || event == wmContextMenu { tray.menu() }
         return 0
-    case wmCommand where WORD(truncatingIfNeeded: wParam) == quitCommand: // LOWORD
-        PostQuitMessage(0)
+    case wmCommand:
+        // The menu's picks go to the core, "Send buddies home" too.
+        guard let choice = tray.choice(for: Int(WORD(truncatingIfNeeded: wParam))) else { return nil } // LOWORD
+        tray.delegate?.choose(choice)
         return 0
     default:
         return nil

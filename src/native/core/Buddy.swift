@@ -11,8 +11,15 @@ func randomSpot(_ screens: [Screen], near start: Point?, size: Size = Size(width
 }
 
 public final class Buddy: OverlayWindowDelegate {
+    enum Role {
+        case main      // the default buddy: always out, never more than one
+        case added     // added from the menu: out until removed, or the app quits
+        case temporary // came out for work no other buddy was free for: goes home once idle
+    }
+
     var session: String?          // who it works for; nil while resting
-    var pick: String?             // its session's avatar; nil wears the default
+    let avatar: String            // what it wears, for as long as it is out
+    var role: Role
     private(set) var look = Look()
     let window: OverlayWindow
     let desktop: Desktop
@@ -32,7 +39,9 @@ public final class Buddy: OverlayWindowDelegate {
     var grabOffset = Point.zero // the cursor, from the window's corner
     var lift: Double = 0         // 0 on the ground, 1 floating
 
-    init(_ window: OverlayWindow, _ desktop: Desktop) {
+    init(_ window: OverlayWindow, _ desktop: Desktop, avatar: String = defaultAvatar, role: Role = .temporary) {
+        self.avatar = avatar
+        self.role = role
         self.window = window
         self.desktop = desktop
         position = randomSpot(desktop.screens(), near: nil)
@@ -48,14 +57,10 @@ public final class Buddy: OverlayWindowDelegate {
     func apply(_ report: Report) {
         lastHeard = Date(timeIntervalSince1970: report.updatedAt / 1000)
         look.name = report.project
-        pick = report.avatar
         setMood(report.mood)
     }
 
-    func rest() {
-        pick = nil
-        setMood("idle")
-    }
+    func rest() { setMood("idle") }
 
     func setMood(_ next: String) {
         guard next != mood else { return }

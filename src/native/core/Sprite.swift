@@ -171,13 +171,14 @@ func bundledSprites(_ paths: Paths, _ images: ImageLoader) -> [String: Sprite] {
 
 /// avatars.json, read again when it changes. A name is looked up there, then among
 /// the bundled sheets, so an entry named like a bundled avatar wins. Anything else wears kyle.
+/// It also holds the default buddy, which the tray menu and /desk-buddy avatar change.
 public final class AvatarLibrary {
     private let paths: Paths
     private let images: ImageLoader
     private let bundled: [String: Sprite]
     private var stamp: Date?
     private var sprites: [String: Sprite] = [:]
-    private var fallback: String?
+    private var savedDefault: String?
 
     public init(_ paths: Paths, _ images: ImageLoader) {
         self.paths = paths
@@ -191,19 +192,44 @@ public final class AvatarLibrary {
         if changed == stamp { return }
         stamp = changed
         sprites = [:]
-        fallback = nil
+        savedDefault = nil
         guard let data = try? Data(contentsOf: file) else { return }
         do {
             let config = try JSONDecoder().decode(AvatarsConfig.self, from: data)
-            fallback = config.default
+            savedDefault = config.default
             for (name, avatar) in config.avatars { sprites[name] = Sprite(name, avatar, base: paths.dataDir, images: images) }
         } catch {
             logLine("avatars.json: \(error)")
         }
     }
 
-    public func sprite(_ pick: String?) -> Sprite? {
-        (pick ?? fallback).flatMap { sprites[$0] ?? bundled[$0] } ?? bundled[defaultAvatar]
+    /// The sheet for a name; kyle's for a name nobody knows, and the default's for none.
+    public func sprite(_ name: String?) -> Sprite? {
+        let id = name ?? defaultBuddy
+        return sprites[id] ?? bundled[id] ?? bundled[defaultAvatar]
     }
     public func has(_ name: String) -> Bool { sprites[name] != nil || bundled[name] != nil }
+
+    /// Every avatar there is: the configured ones, then the bundled ones not configured.
+    public var ids: [String] {
+        sprites.keys.sorted() + bundledAvatars.filter { sprites[$0] == nil && bundled[$0] != nil }
+    }
+    public func label(_ id: String) -> String { (sprites[id] ?? bundled[id])?.label ?? id }
+
+    public var defaultBuddy: String { chosenDefault(saved: savedDefault, known: has) }
+
+    /// Saves a new default. It applies now, even if the file can't be written.
+    public func setDefault(_ id: String) {
+        savedDefault = id
+        let file = paths.avatarsFile
+        do {
+            var config = try readAvatarsConfig(file)
+            config["default"] = id
+            try saveAvatarsConfig(config, to: file)
+            // Our own write: nothing to read back.
+            stamp = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        } catch {
+            logLine("could not save the default buddy: \(error)")
+        }
+    }
 }

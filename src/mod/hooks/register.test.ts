@@ -155,17 +155,13 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 20))
 const command = (args: string) => ({ command: 'desk-buddy', args })
 const start = { cwd: '/work/my-app', surface: 'desktop', isInteractive: true } as const
 
-test('a session picks a configured avatar and keeps reporting it', async ($, on) => {
+test('a pick sets the default, and reports carry no avatar', async ($, on) => {
   const written = setUp(on, AVATARS)
   await $.session.start(start)
-  expect(written[0].avatar).toBeUndefined()
-
   const answer = await $.command.run(command('avatar fox'))
-  expect(answer.text).toContain('fox')
-  expect(written.at(-1)).toMatchObject({ avatar: 'fox', mood: 'idle' })
-
+  expect(answer.text).toContain('The default buddy is now fox')
   await $.tool.call({ tool: 'Read', file_path: '/work/my-app/a.ts' })
-  expect(written.at(-1)).toMatchObject({ avatar: 'fox' })
+  expect(written.every(body => body.avatar === undefined)).toBe(true)
 })
 
 test('a pick becomes the default, moved into place with the rest of the config intact', async ($, on) => {
@@ -183,20 +179,18 @@ test('a pick becomes the default, moved into place with the rest of the config i
   expect(JSON.parse(disk.config).default).toBe('melody')
 })
 
-test('a saved pick of builtin lists as kyle', async ($, on) => {
-  setUp(on, AVATARS)
-  on('state.get', () => ({ value: { value: 'builtin', version: 1 } }))
+test('the list says which buddy is the default, and builtin is kyle', async ($, on) => {
+  setUp(on, JSON.stringify({ ...JSON.parse(AVATARS), default: 'builtin' }))
   await $.session.start(start)
-  expect((await $.command.run(command('avatar'))).text).toContain('This session: kyle.')
+  expect((await $.command.run(command('avatar'))).text).toContain('Default: kyle.')
 })
 
 test('builtin is retired: picking it wears kyle', async ($, on) => {
   const disk = { config: AVATARS, files: [] }
-  const written = setUp(on, undefined, [], undefined, disk)
+  setUp(on, undefined, [], undefined, disk)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar builtin'))
   expect(answer.text).toContain('now kyle')
-  expect(written.at(-1)).toMatchObject({ avatar: 'kyle' })
   expect(JSON.parse(disk.config).default).toBe('kyle')
 })
 
@@ -212,22 +206,20 @@ test('picking the default again leaves the config alone', async ($, on) => {
 test('without a config, a pick of a bundled avatar makes one the app can read', async ($, on) => {
   const ran: string[][] = []
   const disk = { config: undefined as string | undefined, files: [] }
-  const written = setUp(on, undefined, ran, undefined, disk)
+  setUp(on, undefined, ran, undefined, disk)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar melody'))
-  expect(answer.text).toContain('new sessions will start with it')
-  expect(written.at(-1)).toMatchObject({ avatar: 'melody' })
+  expect(answer.text).toContain('The default buddy is now melody')
   expect(JSON.parse(disk.config!)).toEqual({ avatars: {}, default: 'melody' })
 })
 
-test('a default that cannot be saved still leaves the session its pick, and says so', async ($, on) => {
+test('a default that cannot be saved says so', async ($, on) => {
   const disk = { config: AVATARS, files: [], moveFails: true }
-  const written = setUp(on, undefined, [], undefined, disk)
+  setUp(on, undefined, [], undefined, disk)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar fox'))
   expect(answer.text).toContain('could not be saved')
   expect(answer.text).toContain('disk full')
-  expect(written.at(-1)).toMatchObject({ avatar: 'fox' })
   expect(disk.config).toBe(AVATARS)
 })
 
@@ -236,18 +228,19 @@ test('a name the config lacks changes nothing and lists the choices', async ($, 
   const disk = { config: AVATARS, files: [] }
   const written = setUp(on, undefined, ran, undefined, disk)
   await $.session.start(start)
+  await settle()
+  const reported = written.length
   const answer = await $.command.run(command('avatar cat'))
   expect(answer.text).toContain('fox, owl, kyle, melody')
-  expect(written.at(-1)?.avatar).toBeUndefined()
+  expect(written.length).toBe(reported)
   expect(disk.config).toBe(AVATARS)
 })
 
 test('without a config the bundled avatars are still listed', async ($, on) => {
-  const written = setUp(on)
+  setUp(on)
   await $.session.start(start)
   const answer = await $.command.run(command('avatar'))
-  expect(answer.text).toContain('This session: the default. Available: kyle, melody.')
-  expect(written.at(-1)?.avatar).toBeUndefined()
+  expect(answer.text).toContain('Default: kyle. Available: kyle, melody.')
 })
 
 test('an installed avatar named like a bundled one is listed once', async ($, on) => {

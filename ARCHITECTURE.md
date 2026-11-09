@@ -41,7 +41,7 @@ dist/                   the marketplace Claude Code loads the mod from (ignored)
 ```
 
 1. On session, turn and tool events, the mod works out a **mood** (thinking, reading, editing, running, waiting, and so on) and sends the session's whole state to the app with `POST /report`, plus a heartbeat.
-2. The app's **Stage** keeps the latest report from each session, decides which buddy works for which session (`cast`), and drops sessions that stop reporting.
+2. The app's **Stage** keeps the latest report from each session, decides which buddy works for which session (`cast`), and drops sessions that stop reporting. The **default** buddy is always out. The person **adds** more from the tray menu for this launch, each wearing its own avatar, and work no buddy is free for brings out a temporary copy of the default.
 3. Each **Buddy** walks, naps and reacts according to its mood. The core describes how it should look as a **Scene**, and the OS layer paints that scene.
 
 The app also runs with no session at all. Its buddy then wanders and naps by itself.
@@ -52,13 +52,14 @@ The app also runs with no session at all. Its buddy then wanders and naps by its
 
 - Hooks into the Claude Code session lifecycle (`session.start`, `turn.*`, `tool.call`, `session.end`) and turns each event into a report.
 - Finds the running app, or installs it from the zip it carries and opens it. When the zip it carries is newer than the installed app, it replaces the installed one.
-- Provides the `/desk-buddy` command: start and stop the app, pick an avatar, and `create`, which runs the avatar-maker agent to draw a new sprite sheet.
+- Provides the `/desk-buddy` command: start and stop the app, set the default buddy, and `create`, which runs the avatar-maker agent to draw a new sprite sheet.
 - Everything that depends on the OS goes through an `OSBridge`, so adding an OS means adding a bridge, not branches in `register.ts`.
 
 ### Native core (`src/native/core`)
 
 - Imports only Foundation. It holds all the shared logic: reports and casting, movement and moods, sprite sheets and `avatars.json`, scene layout, and HTTP parsing.
 - Defines the protocols each OS fills in: `OverlayWindow`, `Tray`, `ImageLoader`, `Desktop` and `Paths`.
+- Builds the tray menu (`TrayMenu`): every buddy, how many of each are out, and which is the default. The OS layer paints it and passes each pick back through `TrayDelegate`.
 - See [src/native/core/README.md](src/native/core/README.md).
 
 ### OS layers
@@ -71,7 +72,7 @@ The app also runs with no session at all. Its buddy then wanders and naps by its
 
 All data is stored in local files. There is no database.
 
-- **App data folder:** `~/Library/Application Support/DeskBuddy/` on macOS and `%LOCALAPPDATA%\DeskBuddy` on Windows. It holds `avatars.json`, the default pick, and avatars made with `/desk-buddy create`.
+- **App data folder:** `~/Library/Application Support/DeskBuddy/` on macOS and `%LOCALAPPDATA%\DeskBuddy` on Windows. It holds `avatars.json`, and avatars made with `/desk-buddy create`. Besides the avatars, `avatars.json` holds the `default`, which the tray menu and `/desk-buddy avatar <name>` write. Buddies added from the menu aren't saved.
 - **Bundled avatars:** `kyle`, `melody`, `sam` and `onyx`. Each is a PNG sprite sheet with a JSON file that describes its 13 animation states. They are in `src/native/core/assets` and get copied into each app's resources. The sheet format is described in [AVATAR-SHEETS.md](src/mod/tool-avatar-maker/AVATAR-SHEETS.md).
 
 ## Build and distribution
@@ -98,13 +99,15 @@ See [ROADMAP.md](ROADMAP.md). The main architectural work still open:
 
 - Building and running the Windows layer for the first time.
 - Making the mod cross-platform, which removes its dependence on `HOME`, `/` as a path separator and macOS-only commands.
-- A buddy picker and a size setting, built on top of the core and platform split.
+- A size setting, built on top of the core and platform split, beside the buddies menu.
 
 ## Glossary
 
 - **Buddy:** an avatar on screen, standing in for one session.
 - **Mood:** what a session is doing right now, which sets a buddy's animation, speed and caption.
 - **Cast:** the mapping from sessions to buddies.
+- **Default buddy:** the one that is always out, saved across launches.
+- **Added buddy:** one brought out from the tray menu, which stays out until it is removed or the app quits.
 - **Stage:** the core's model of every session and buddy.
 - **Scene:** what one buddy should look like this frame, painted by the OS layer.
 - **Bridge:** the mod's OS-specific commands and paths.

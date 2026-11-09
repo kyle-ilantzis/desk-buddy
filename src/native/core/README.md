@@ -4,8 +4,9 @@ What every OS shares, as the Swift module `DeskBuddyCore`. It imports only Found
 
 | File | What |
 |---|---|
-| `Platform.swift` | The protocols each OS fills in: `OverlayWindow`, `Tray`, `ImageLoader`, `Desktop`, and the `Paths` and `Platform` it hands the core |
-| `Stage.swift` | The sessions' reports, who works for whom (`cast`), and the `/report`, `/status` and `/quit` routes |
+| `Platform.swift` | The protocols each OS fills in: `OverlayWindow`, `Tray`, `ImageLoader`, `Desktop`, and the `Paths` and `Platform` it hands the core. Also the tray menu: `TrayMenu`, `TrayChoice` and `TrayDelegate` |
+| `Stage.swift` | The sessions' reports, who works for whom (`cast`), the buddies added from the tray menu, and the `/report`, `/status` and `/quit` routes |
+| `Roster.swift` | The saved default buddy, and reading and writing `avatars.json` whole |
 | `Buddy.swift` | One buddy: walking, moods, naps, and being picked up and dropped |
 | `Sprite.swift` | Sprite sheets, `avatars.json`, and the bundled avatars |
 | `Scene.swift` | What a buddy looks like (`Look`) and where each piece goes in its window (`Scene`), which each OS paints |
