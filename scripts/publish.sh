@@ -13,7 +13,7 @@ cd "$root"
 
 remote="origin"
 branch="dist"
-index="build/publish.index"
+index="$root/build/publish.index"
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "working tree has changes: commit them first, so the publish matches a commit" >&2
